@@ -2292,9 +2292,13 @@ export function setupProgressBarInteractions(totalDurationMs, slideCount, siteBa
             const hoverTime = percentage * totalDuration;
             
             const slideIdx = getSlideForTime(hoverTime);
-            
-            if (thumbnailImage) {
-                thumbnailImage.src = `${siteBaseUrl}images/Slide${slideIdx}.png`;
+
+            // The slide's own picture from the media map - a published page names its pictures for the
+            // page (images/Matthew-9-Slide1.png), so images/Slide{n}.png was a 404 on every hover.
+            const thumbnailSrc = (slideMediaMap[slideIdx] && slideMediaMap[slideIdx].png) || '';
+
+            if (thumbnailImage && thumbnailSrc && thumbnailImage.src !== thumbnailSrc) {
+                thumbnailImage.src = thumbnailSrc;
             }
             if (hoverTooltip) {
                 hoverTooltip.textContent = formatTimestampLocal(hoverTime);
@@ -2307,7 +2311,7 @@ export function setupProgressBarInteractions(totalDurationMs, slideCount, siteBa
                 if (xPos > rect.width - thumbWidth / 2) xPos = rect.width - thumbWidth / 2;
                 
                 thumbnailPreview.style.left = `${xPos}px`;
-                thumbnailPreview.style.opacity = '1';
+                thumbnailPreview.style.opacity = thumbnailSrc ? '1' : '0';
             }
             if (hoverTooltip) {
                 hoverTooltip.style.opacity = '1';
@@ -2683,7 +2687,7 @@ let audioRecovering = false; // true while an audio decode recovery is in-flight
 let videoRetryResetTimer = null; // timer to reset video retry count after sustained playback
 let audioRetryResetTimer = null; // timer to reset audio retry count after sustained playback
 
-// Slide media URL map: { [slideIndex]: { audio: "url", video: "url" } }
+// Slide media URL map: { [slideIndex]: { audio: "url", video: "url", png: "url" } }
 // Populated from C# after slide data is resolved to absolute/blob URLs.
 let slideMediaMap = {};
 let isAutoAdvancing = false; // Suppresses pause handler during auto-advance source swap
@@ -2691,7 +2695,7 @@ let isAutoAdvancing = false; // Suppresses pause handler during auto-advance sou
 /**
  * Sets the slide media URL map. Called from C# after slide data initialization
  * (and again after Blob URL creation for authenticated repos).
- * @param {Object} map - { [slideIndex]: { audio: "url", video: "url" } }
+ * @param {Object} map - { [slideIndex]: { audio: "url", video: "url", png: "url" } }
  */
 export function setSlideMediaMap(map) {
     slideMediaMap = map || {};
