@@ -1,0 +1,70 @@
+/* _content/JBC.DoMoreWithSlides.AL.BlazorLib/_Shared/Empty_Layout.razor.rz.scp.css */
+/* _content/JBC.DoMoreWithSlides.AL.BlazorLib/_Shared/Home_Page.razor.rz.scp.css */
+html[b-naiahtyhn6] {
+    min-height: 100%;
+}
+
+body[b-naiahtyhn6] {
+    overflow-y: hidden;
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+}
+
+html[b-naiahtyhn6], body[b-naiahtyhn6] {
+    height: 100%;
+    overflow: hidden;
+}
+/* _content/JBC.DoMoreWithSlides.AL.BlazorLib/_Shared/MainAppBar_Component.razor.rz.scp.css */
+.appbar-control-section .e-dropdown-btn.e-inherit[b-svdoh9zy91],
+.appbar-control-section .e-btn.e-inherit.home[b-svdoh9zy91] {
+    margin: 0 5px;
+}
+
+.appbar-control-section .e-appbar .e-appbar-separator[b-svdoh9zy91] {
+    margin: 0 10px;
+}
+
+.appbar-control-section .e-appbar-icon-menu[b-svdoh9zy91] {
+    display: none;
+}
+
+@@media screen and (max-width: 480px) {
+    .appbar-control-section .e-appbar-icon-menu[b-svdoh9zy91] {
+        display: block;
+    }
+
+    .appbar-control-section .login[b-svdoh9zy91],
+    .appbar-control-section .e-appbar-separator[b-svdoh9zy91],
+    .appbar-control-section .e-dropdown-btn.e-inherit.e-appbar-menu[b-svdoh9zy91],
+    .appbar-control-section .e-menu-container.e-inherit.e-appbar-menu[b-svdoh9zy91],
+    .appbar-control-section .e-menu-container.e-inherit.e-appbar-icon-menu .e-menu .e-menu-item .e-caret[b-svdoh9zy91],
+    .appbar-control-section .e-btn.e-inherit.e-appbar-menu[b-svdoh9zy91] {
+        display: none;
+    }
+
+    .appbar-control-section .e-menu-container.e-inherit.e-appbar-icon-menu ul .e-menu-item.e-menu-caret-icon[b-svdoh9zy91] {
+        padding: 0 8px;
+    }
+
+    .appbar-control-section .e-menu-container.e-inherit ul .e-menu-item .e-menu-icon[b-svdoh9zy91] {
+        margin-right: 0;
+    }
+
+    .appbar-control-section .e-menu-container.e-inherit[b-svdoh9zy91] {
+        margin: 0 10px;
+    }
+
+    .fabric .appbar-control-section .e-menu-container.e-inherit ul.e-menu:not(.e-vertical)[b-svdoh9zy91],
+    .fabric-dark .appbar-control-section .e-menu-container.e-inherit ul.e-menu:not(.e-vertical)[b-svdoh9zy91] {
+        padding: 0;
+    }
+
+    .appbar-control-section .e-input-group.e-control-wrapper.e-inherit[b-svdoh9zy91] {
+        margin-left: 10px;
+    }
+
+    .appbar-control-section .menu[b-svdoh9zy91] {
+        margin-bottom: 3px;
+    }
+}
+/* _content/JBC.DoMoreWithSlides.AL.BlazorLib/_Shared/Main_Layout.razor.rz.scp.css */

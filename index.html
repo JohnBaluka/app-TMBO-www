@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TheMultimodalBibleOrg</title>
+    <base href="/" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Carlito&display=swap" />
+    <link rel="stylesheet" href="_content/JBC.DoMoreWithSlides.AL.BlazorLib/revealjs/reset.css" />
+    <link rel="stylesheet" href="_content/JBC.DoMoreWithSlides.AL.BlazorLib/revealjs/reveal.css" />
+    <link rel="stylesheet" href="_content/JBC.DoMoreWithSlides.AL.BlazorLib/revealjs/theme/white.css" id="theme" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <link rel="stylesheet" href="lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="_content/Radzen.Blazor/css/standard-base.css">
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link href="JBC.GitSlides.AL.BlazorWebApp.ClientOnly.styles.css" rel="stylesheet" />
+    <link href="manifest.webmanifest" rel="manifest" />
+    <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
+</head>
+
+<body>
+    <div id="app">
+        <svg class="loading-progress">
+            <circle r="40%" cx="50%" cy="50%" />
+            <circle r="40%" cx="50%" cy="50%" />
+        </svg>
+        <div class="loading-progress-text"></div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="." class="reload">Reload</a>
+        <span class="dismiss">🗙</span>
+    </div>
+    <!-- Single Page Apps for GitHub Pages (https://github.com/rafrex/spa-github-pages): 404.html sends a
+         deep link here as /?p=/Page&q=query. This puts the address back before the router reads it, so a
+         reload or a shared link opens that page rather than the first one. -->
+    <script type="text/javascript">
+        (function (l) {
+            if (!l.search) return;
+            var q = {};
+            l.search.slice(1).split('&').forEach(function (v) {
+                var a = v.split('=');
+                q[a[0]] = a.slice(1).join('=').replace(/~and~/g, '&');
+            });
+            if (q.p !== undefined) {
+                window.history.replaceState(null, null,
+                    l.pathname.slice(0, -1) + (q.p || '') + (q.q ? ('?' + q.q) : '') + l.hash);
+            }
+        }(window.location));
+    </script>
+    <script src="_framework/blazor.webassembly.js"></script>
+    <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
+    <script>navigator.serviceWorker.register('service-worker.js');</script>
+</body>
+
+</html>

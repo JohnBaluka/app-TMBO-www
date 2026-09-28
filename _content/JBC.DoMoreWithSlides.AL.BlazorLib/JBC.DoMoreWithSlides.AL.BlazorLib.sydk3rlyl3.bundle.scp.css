@@ -1,0 +1,485 @@
+/* _content/JBC.DoMoreWithSlides.AL.BlazorLib/Feedback/Feedback__Component.razor.rz.scp.css */
+/* The saved-feedback page: a list beside one report.
+
+   Everything here is about the report on the right. The grid is Radzen's own and needs nothing;
+   what does need rules is prose, a stack trace and a picture, none of which a component library
+   has an opinion about. */
+
+.dmws-feedback-page[b-614ybps1w0] {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+/* The report itself scrolls, and the header above it does not. */
+.dmws-feedback-detail[b-614ybps1w0] {
+    height: 100%;
+    min-height: 0;
+    overflow: auto;
+    padding: 0 0.75rem 0.75rem 0.75rem;
+}
+
+/* One grid row: the kind glyph, then a subject that ellipses rather than wrapping the row to two
+   lines. min-width:0 on the flex child is what makes text-overflow work at all inside a flex box. */
+.dmws-feedback-row[b-614ybps1w0] {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+}
+
+.dmws-feedback-row-subject[b-614ybps1w0] {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* What somebody typed. pre-wrap because they pressed Enter and meant it: a bug report's paragraphs
+   and its numbered steps are the shape of the report. */
+.dmws-feedback-body[b-614ybps1w0] {
+    margin: 0 0 0.75rem 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* The captured context, as a two-column definition list. */
+.dmws-feedback-context[b-614ybps1w0] {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.15rem 0.75rem;
+    margin: 0;
+}
+
+    .dmws-feedback-context dt[b-614ybps1w0] {
+        opacity: 0.7;
+    }
+
+    .dmws-feedback-context dd[b-614ybps1w0] {
+        margin: 0;
+        overflow-wrap: anywhere;
+    }
+
+/* A stack trace. It scrolls sideways inside its own box rather than widening the pane, which is
+   the rule every wide thing in this application follows. */
+.dmws-feedback-error[b-614ybps1w0] {
+    margin: 0;
+    max-height: 20rem;
+    overflow: auto;
+    font-family: ui-monospace, Consolas, "Courier New", monospace;
+    font-size: 0.75rem;
+    line-height: 1.35;
+    white-space: pre;
+}
+
+/* One attachment: a header row that is always there, and the picture or the player under it once
+   somebody has asked for it. */
+.dmws-feedback-attachment-card[b-614ybps1w0] {
+    border: 1px solid var(--rz-base-300, rgba(0, 0, 0, 0.12));
+    border-radius: 4px;
+    padding: 0.4rem;
+    margin-bottom: 0.5rem;
+}
+
+.dmws-feedback-attachment-head[b-614ybps1w0] {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+}
+
+.dmws-feedback-attachment-name[b-614ybps1w0] {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dmws-feedback-attachment-size[b-614ybps1w0] {
+    opacity: 0.7;
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+/* A screenshot of a whole screen is far wider than this pane; capping the width is what stops it
+   pushing the splitter open, and capping the height is what stops one recording filling the page. */
+.dmws-feedback-media[b-614ybps1w0] {
+    display: block;
+    max-width: 100%;
+    max-height: 24rem;
+    margin-top: 0.4rem;
+    border-radius: 3px;
+    background: var(--rz-base-200, rgba(0, 0, 0, 0.05));
+}
+/* _content/JBC.DoMoreWithSlides.AL.BlazorLib/Feedback/SlidesError__Dialog.razor.rz.scp.css */
+/* The unexpected-error dialog.
+
+   The two blocks below are the same shapes the Feedback page and the rail draw, and they are
+   repeated rather than shared because CSS isolation scopes a stylesheet to one component: a rule
+   in Feedback__Component.razor.css cannot reach markup this component rendered. */
+
+.dmws-error-dialog[b-kvi7cyddb0] {
+    min-width: 0;
+}
+
+/* The captured context, as a two-column definition list. */
+.dmws-feedback-context[b-kvi7cyddb0] {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.15rem 0.75rem;
+    margin: 0;
+}
+
+    .dmws-feedback-context dt[b-kvi7cyddb0] {
+        opacity: 0.7;
+    }
+
+    .dmws-feedback-context dd[b-kvi7cyddb0] {
+        margin: 0;
+        overflow-wrap: anywhere;
+    }
+
+/* The stack trace. It scrolls inside its own box rather than widening the dialog, which is the rule
+   every wide thing in this application follows -- and a dialog that grew to the width of a stack
+   trace would push its own buttons off the screen. */
+.dmws-feedback-error[b-kvi7cyddb0] {
+    margin: 0;
+    max-height: 16rem;
+    overflow: auto;
+    font-family: ui-monospace, Consolas, "Courier New", monospace;
+    font-size: 0.75rem;
+    line-height: 1.35;
+    white-space: pre;
+}
+/* _content/JBC.DoMoreWithSlides.AL.BlazorLib/SidePanel/SidePanel__Component.razor.rz.scp.css */
+/* Radzen's standard theme paints .rz-sidebar as a DARK panel with WHITE text:
+
+       .rz-sidebar { background-color: var(--rz-sidebar-background-color);   (--rz-base-900)
+                     color:            var(--rz-sidebar-color); }            (--rz-white)
+
+   That is right for the left rail, which is a RadzenPanelMenu drawn to sit on it. It is wrong for
+   everything in this one: RadzenTabs, RadzenFieldset, RadzenFormField, RadzenAlert and RadzenDataGrid
+   all paint themselves the LIGHT content background, while the white text is inherited straight
+   over the top of it - so most of the Help and Feedback tabs were white on white and simply could
+   not be read.
+
+   Both are reset here, on the rail's own root, from the same theme pair (--rz-base-background-color
+   with --rz-text-color). Taking both from one pair is what guarantees they contrast: a theme that
+   made the background dark would make the text light with it. */
+
+.dmws-side-panel[b-c5yivnf9og] {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--rz-base-background-color, #fff);
+    color: var(--rz-text-color, #212529);
+}
+
+.dmws-side-panel-header[b-c5yivnf9og] {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.5rem 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--rz-base-300, rgba(0, 0, 0, 0.12));
+}
+
+/* ::deep is required because Radzen renders these, and CSS isolation only stamps the scope
+   attribute on this component's own markup. */
+
+/* The tab body is the thing that has to scroll. */
+.dmws-side-panel[b-c5yivnf9og]  .rz-tabview {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.dmws-side-panel[b-c5yivnf9og]  .rz-tabview-panels {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}
+
+/* The tab captions, which inherit the sidebar's white the same way the bodies did - and sit on the
+   same light strip. Radzen sets no colour of its own on them, so without this the strip reads as
+   two empty tabs. */
+.dmws-side-panel[b-c5yivnf9og]  .rz-tabview-nav a,
+.dmws-side-panel[b-c5yivnf9og]  .rz-tabview-title {
+    color: var(--rz-text-color, #212529);
+}
+
+.dmws-side-panel[b-c5yivnf9og]  .rz-tabview-nav li.rz-tabview-selected a,
+.dmws-side-panel[b-c5yivnf9og]  .rz-tabview-nav li.rz-tabview-selected .rz-tabview-title {
+    color: var(--rz-primary, #1b5e9f);
+}
+
+/* The rail's own header text and close button, which are outside the tab body and so sit directly
+   on the sidebar. */
+.dmws-side-panel-header[b-c5yivnf9og]  .rz-text-subtitle2,
+.dmws-side-panel-header[b-c5yivnf9og]  .rz-button {
+    color: var(--rz-text-color, #212529);
+}
+/* _content/JBC.DoMoreWithSlides.AL.BlazorLib/SidePanel/SlidesFeedback__Component.razor.rz.scp.css */
+/* The two tab bodies share this padding, so Help and Feedback do not read as two different panels.
+   Help's own file carries the same rule for the same reason.
+
+   The colour is named rather than inherited: .rz-sidebar paints its text white for the left rail's
+   dark panel, and every Radzen control in here paints itself the light content background - so the
+   labels and the captions were white on white. The rail's root resets it; this is the same rule at
+   the tab level, so a body rendered outside the rail is still readable. */
+
+.dmws-side-panel-body[b-0slu398qnj] {
+    padding: 0.75rem;
+    color: var(--rz-text-color, #212529);
+}
+
+    /* The definition list and the attachment rows are raw markup, so they inherit rather than being
+       painted by Radzen. */
+    .dmws-side-panel-body dt[b-0slu398qnj],
+    .dmws-side-panel-body dd[b-0slu398qnj],
+    .dmws-side-panel-body span[b-0slu398qnj] {
+        color: var(--rz-text-color, #212529);
+    }
+
+/* One attachment row: an icon, a name that may be long, and a way to take it off again. The name
+   is the flexible one and truncates rather than wrapping - a recording's file name is not worth
+   three lines of a panel this narrow. */
+.dmws-feedback-attachment[b-0slu398qnj] {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+}
+
+.dmws-feedback-attachment-name[b-0slu398qnj] {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8rem;
+}
+
+/* What is recorded with the report, as a definition list rather than a table: the captions are
+   short and the values are not, so two columns waste half the width of a 22rem rail. */
+.dmws-feedback-context[b-0slu398qnj] {
+    margin: 0;
+    font-size: 0.8rem;
+}
+
+    .dmws-feedback-context dt[b-0slu398qnj] {
+        opacity: 0.7;
+        margin-top: 0.35rem;
+    }
+
+    .dmws-feedback-context dd[b-0slu398qnj] {
+        margin: 0;
+        word-break: break-word;
+    }
+
+/* The folder a saved report went to. It is a path, so it breaks anywhere rather than overflowing. */
+.dmws-feedback-path[b-0slu398qnj] {
+    font-size: 0.75rem;
+    word-break: break-all;
+    opacity: 0.85;
+}
+/* _content/JBC.DoMoreWithSlides.AL.BlazorLib/SidePanel/SlidesHelp__Component.razor.rz.scp.css */
+/* Matches the Feedback tab's padding, so the two read as one panel rather than two. */
+
+.dmws-side-panel-body[b-8rzuzgpclu] {
+    padding: 0.75rem;
+}
+
+/* Help is prose, and prose in a 22rem rail needs looser lines than a data grid does. A help
+   component writes plain markup - headings, paragraphs, lists - and these rules are what make that
+   look deliberate without every help file having to carry its own styles.
+
+   Every one of them names a colour. Raw <p>, <h5>, <li> and <code> inherit, and what they were
+   inheriting was .rz-sidebar's white (see SidePanel__Component.razor.css) over the tab body's light
+   background. The rail's root now resets that, and these are belt-and-braces: a help topic is the
+   one place in this application where unreadable text is worst, because it is what somebody opens
+   when they are already stuck. */
+
+.dmws-help-content[b-8rzuzgpclu] {
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--rz-text-color, #212529);
+}
+
+    .dmws-help-content h4[b-8rzuzgpclu],
+    .dmws-help-content h5[b-8rzuzgpclu] {
+        margin: 1rem 0 0.35rem 0;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--rz-text-title-color, var(--rz-text-color, #212529));
+    }
+
+    .dmws-help-content h4:first-child[b-8rzuzgpclu],
+    .dmws-help-content h5:first-child[b-8rzuzgpclu] {
+        margin-top: 0;
+    }
+
+    .dmws-help-content p[b-8rzuzgpclu],
+    .dmws-help-content li[b-8rzuzgpclu],
+    .dmws-help-content b[b-8rzuzgpclu],
+    .dmws-help-content i[b-8rzuzgpclu],
+    .dmws-help-content em[b-8rzuzgpclu],
+    .dmws-help-content strong[b-8rzuzgpclu] {
+        color: var(--rz-text-color, #212529);
+    }
+
+    .dmws-help-content p[b-8rzuzgpclu] {
+        margin: 0 0 0.6rem 0;
+    }
+
+    .dmws-help-content ul[b-8rzuzgpclu],
+    .dmws-help-content ol[b-8rzuzgpclu] {
+        margin: 0 0 0.6rem 0;
+        padding-left: 1.1rem;
+    }
+
+    .dmws-help-content li[b-8rzuzgpclu] {
+        margin-bottom: 0.25rem;
+    }
+
+    /* A light chip with dark text, both named: the background alone would still have left white
+       text on it. */
+    .dmws-help-content code[b-8rzuzgpclu] {
+        font-size: 0.78rem;
+        padding: 0.05rem 0.25rem;
+        border-radius: 3px;
+        background: var(--rz-base-200, rgba(0, 0, 0, 0.06));
+        color: var(--rz-text-color, #212529);
+        word-break: break-word;
+    }
+
+    .dmws-help-content a[b-8rzuzgpclu] {
+        color: var(--rz-link-color, var(--rz-primary, #1b5e9f));
+    }
+
+/* The way from reading about a page to saying something about it. Pinned to the foot of the tab
+   rather than floating, because it is an afterthought and should read as one. */
+.dmws-help-foot[b-8rzuzgpclu] {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--rz-base-300, rgba(0, 0, 0, 0.12));
+}
+/* _content/JBC.DoMoreWithSlides.AL.BlazorLib/_Shared/Empty_Layout.razor.rz.scp.css */
+/* _content/JBC.DoMoreWithSlides.AL.BlazorLib/_Shared/Home_Page.razor.rz.scp.css */
+/* The dashboard scrolls inside the body rather than growing the shell, which is what every other
+   full-height page here does. */
+
+.dmws-home[b-naiahtyhn6] {
+    padding: 1rem 1.25rem 2rem 1.25rem;
+}
+
+.dmws-home-section[b-naiahtyhn6] {
+    margin-top: 1.5rem;
+}
+
+.dmws-home-section-head[b-naiahtyhn6] {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid var(--rz-base-300, rgba(0, 0, 0, 0.12));
+}
+
+/* The brand mark beside a heading, at the size a Material Symbol renders at so the two kinds of
+   heading sit on the same line. */
+.dmws-home-section-mark[b-naiahtyhn6] {
+    width: 20px;
+    height: 20px;
+    display: block;
+}
+
+/* auto-fill rather than auto-fit: a group holding one card gets one card-width tile rather than
+   one stretched across the whole window, which is what auto-fit does and what makes a dashboard
+   with uneven groups look broken. */
+.dmws-home-cards[b-naiahtyhn6] {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+    gap: 0.6rem;
+}
+
+.dmws-home-card[b-naiahtyhn6] {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: 0.75rem;
+    border: 1px solid var(--rz-base-300, rgba(0, 0, 0, 0.12));
+    border-radius: 6px;
+    background: var(--rz-base-background-color, #fff);
+    color: inherit;
+    text-decoration: none;
+    transition: border-color 120ms ease-out, box-shadow 120ms ease-out, transform 120ms ease-out;
+}
+
+    .dmws-home-card:hover[b-naiahtyhn6],
+    .dmws-home-card:focus-visible[b-naiahtyhn6] {
+        border-color: var(--rz-primary, #3f51b5);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+        transform: translateY(-1px);
+        text-decoration: none;
+    }
+
+.dmws-home-card-mark[b-naiahtyhn6] {
+    width: 26px;
+    height: 26px;
+    display: block;
+}
+
+.dmws-home-card-caption[b-naiahtyhn6] {
+    font-weight: 600;
+    font-size: 0.92rem;
+}
+
+/* The address, so a card says where it goes as well as what it is - and truncates rather than
+   wrapping, because a long manager route is not worth a second line on a tile. */
+.dmws-home-card-route[b-naiahtyhn6] {
+    font-size: 0.72rem;
+    opacity: 0.6;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* _content/JBC.DoMoreWithSlides.AL.BlazorLib/_Shared/Main_Layout.razor.rz.scp.css */
+/* Bound the shell to the viewport. Radzen's layout defaults to min-height:100vh, which overflows
+   once the header is present; the full-height pages (MainView, the manager surfaces, the RefMan
+   library) then get a second scrollbar outside their own. Pages manage their own scrolling, so
+   only the body area is allowed to scroll here.
+
+   ::deep is required because .rz-layout, .rz-body and .rz-sidebar are rendered by Radzen's
+   components, and CSS isolation only stamps the scope attribute on this component's own markup. */
+
+.dmws-layout-shell[b-06l3wykckf] {
+    height: 100vh;
+    overflow: hidden;
+}
+
+    .dmws-layout-shell[b-06l3wykckf]  .rz-layout {
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .dmws-layout-shell[b-06l3wykckf]  .rz-body {
+        overflow: auto;
+    }
+
+/* The version and build, stacked, at the right-hand end of the header row. Small and slightly
+   faded because it is read once in a while rather than all the time, and never wrapped: a version
+   broken across two lines reads as two different numbers. */
+.dmws-app-version[b-06l3wykckf] {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    margin-left: 0.75rem;
+    font-size: 11px;
+    line-height: 1.25;
+    white-space: nowrap;
+    opacity: 0.85;
+}
