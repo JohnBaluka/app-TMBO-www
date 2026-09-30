@@ -398,30 +398,358 @@ export async function initialize(dotNet, level = 3) {
     setupAudioListeners();
 
     // A slide's notes drawn from its notes file are markup Blazor does not own, so no @onclick can be
-    // put on a line of them — one listener on the document finds the line and hands its id back.
+    // put on a line of them — listeners on the document find the line. A click marks it; hovering or
+    // marking a line puts its Play and Copy buttons beside it (see showNoteLineActions).
     document.removeEventListener('click', onNotesHtmlClick);
     document.addEventListener('click', onNotesHtmlClick);
+    document.removeEventListener('mouseover', onNoteLineHover);
+    document.addEventListener('mouseover', onNoteLineHover);
+    document.removeEventListener('scroll', onNoteLineScroll, true);
+    document.addEventListener('scroll', onNoteLineScroll, true);
+    document.removeEventListener('play', onNarrationPlayOrPause, true);
+    document.addEventListener('play', onNarrationPlayOrPause, true);
+    document.removeEventListener('pause', onNarrationPlayOrPause, true);
+    document.addEventListener('pause', onNarrationPlayOrPause, true);
 
     logInfo('ArticleViewer JS module initialized');
 }
 
+// -- A line of a slide's notes: marked by a click, played and copied by its own two buttons ------------
+//
+// Clicking a line used to seek and play at once. Now a click only marks it — highlighted, nothing plays
+// (the user's ask, 2026-09-30) — and a small Play and Copy button sit beside the line under the pointer,
+// or beside the marked line when the pointer is elsewhere. One pair of buttons for the whole document,
+// fixed to the window rather than put inside the notes: the notes are Blazor's and their markup is
+// replaced whenever the line being said moves, which would take a child of theirs with it.
+
+const NOTE_LINE_SELECTOR = '.slide-notes .note-line[data-note-id]';
+
+/** The line a click marked — { slideIndex, noteId } — or null. */
+let markedNoteLine = null;
+
+/** The line the buttons are beside now — { slideIndex, noteId } — or null. */
+let shownNoteLine = null;
+
+let noteLineActions = null;
+
 /**
- * A click on a spoken line of a slide's notes drawn as markup (`.slide-notes-html`): the line's note id
- * and its slide go back to .NET, which seeks exactly as a click on a note paragraph does.
+ * The slide whose animation step the pointer is holding — a line of it is hovered — or null. While it is
+ * set the narration leaves that slide's step alone, so hovering works while the audio plays too (the
+ * user's ask, 2026-09-30); moving off every line hands the step back to the narration.
+ */
+let hoverFragmentSlide = null;
+
+function cssEscape(value) {
+    return window.CSS && CSS.escape ? CSS.escape(value) : String(value).replace(/["\\]/g, '');
+}
+
+function noteIdOf(line) {
+    return line.getAttribute('data-note-id') || line.id;
+}
+
+/** Every piece of a line — a line written over two paragraphs is two spans — in its own slide's notes. */
+function noteLinePieces(slideIndex, noteId) {
+    const notes = document.getElementById(`slideNotes-${slideIndex}`);
+
+    return notes
+        ? Array.from(notes.querySelectorAll(`.note-line[data-note-id="${cssEscape(noteId)}"]`))
+        : [];
+}
+
+function ensureNoteLineActions() {
+    if (noteLineActions && noteLineActions.isConnected) return noteLineActions;
+
+    noteLineActions = document.createElement('div');
+    noteLineActions.id = 'noteLineActions';
+    noteLineActions.className = 'note-line-actions';
+    noteLineActions.innerHTML =
+        '<button type="button" id="noteLinePlayButton" data-action="play" title="Play from this line" aria-label="Play from this line">play_arrow</button>' +
+        '<button type="button" id="noteLineCopyButton" data-action="copy" title="Copy this line" aria-label="Copy this line">content_copy</button>';
+
+    // Leaving the buttons for anywhere but the line they belong to goes back to the marked line.
+    noteLineActions.addEventListener('mouseleave', event => {
+        const into = event.relatedTarget && event.relatedTarget.closest
+            ? event.relatedTarget.closest(NOTE_LINE_SELECTOR)
+            : null;
+
+        if (!into) leaveNoteLines();
+    });
+
+    document.body.appendChild(noteLineActions);
+
+    return noteLineActions;
+}
+
+/**
+ * Puts the two buttons above the start of a line (the user's ask, 2026-09-30), or hides them for null or
+ * a line no longer drawn. Below the line instead when above would leave the window.
+ */
+function showNoteLineActions(target) {
+    const pieces = target ? noteLinePieces(target.slideIndex, target.noteId) : [];
+    const first = pieces.length > 0 ? pieces[0] : null;
+    const rects = first ? first.getClientRects() : [];
+
+    if (!first || rects.length === 0 || first.offsetParent === null) {
+        shownNoteLine = null;
+        if (noteLineActions) noteLineActions.classList.remove('visible');
+        return;
+    }
+
+    const actions = ensureNoteLineActions();
+    const rect = rects[0];
+
+    shownNoteLine = target;
+    actions.classList.add('visible');
+    refreshNoteLinePlayButton();
+
+    const width = actions.offsetWidth || 56;
+    const height = actions.offsetHeight || 24;
+    let left = rect.left;
+    let top = rect.top - height - 2;
+
+    if (top < 4) top = rect.bottom + 2;
+
+    left = Math.min(Math.max(4, left), window.innerWidth - width - 4);
+
+    actions.style.left = `${Math.round(left)}px`;
+    actions.style.top = `${Math.round(top)}px`;
+}
+
+/** The narration element that is playing, or null. */
+function playingNarration() {
+    return ['consolidated-audio-player', 'consolidated-video-player']
+        .map(id => document.getElementById(id))
+        .find(media => media && !media.paused) || null;
+}
+
+/** True while a narration is playing. */
+function isNarrationPlaying() {
+    return playingNarration() !== null;
+}
+
+/** The Play button shows Pause while a narration plays — pressing it then pauses (the user's ask). */
+function refreshNoteLinePlayButton() {
+    const button = noteLineActions ? noteLineActions.querySelector('#noteLinePlayButton') : null;
+
+    if (!button) return;
+
+    const playing = isNarrationPlaying();
+    const label = playing ? 'Pause' : 'Play from this line';
+
+    button.textContent = playing ? 'pause' : 'play_arrow';
+    button.title = label;
+    button.setAttribute('aria-label', label);
+}
+
+/** A media element started or stopped somewhere — media events do not bubble, so this listens capturing. */
+function onNarrationPlayOrPause(event) {
+    if (event.target && (event.target.tagName === 'AUDIO' || event.target.tagName === 'VIDEO'))
+        refreshNoteLinePlayButton();
+}
+
+/** The pointer is over a line: its buttons, and its animation step held until the pointer leaves the lines. */
+function hoverNoteLine(target) {
+    showNoteLineActions(target);
+
+    if (showFragmentForNoteLine(target.slideIndex, target.noteId)) hoverFragmentSlide = target.slideIndex;
+}
+
+/**
+ * The pointer left every line: the buttons go back to the marked line, or away, and the narration has
+ * its step back. With nothing playing, the marked line's step is shown again.
+ */
+function leaveNoteLines() {
+    hoverFragmentSlide = null;
+
+    showNoteLineActions(markedNoteLine);
+
+    if (markedNoteLine && !isNarrationPlaying())
+        showFragmentForNoteLine(markedNoteLine.slideIndex, markedNoteLine.noteId);
+}
+
+/**
+ * Shows the slide's animation step for a line of its notes — the step the narration shows when it says
+ * that line (the user's ask, 2026-09-30: "on hover or on click, also trigger the fragment/animation").
+ * The same mapping the narration uses: the n-th spoken line is step n-1, the first is before any step.
+ * A slide that has never played still has its fragments switched off (drawn all at once), so they are
+ * switched on first, as pressing Play does. Works while a narration plays as well: the hover holds the
+ * slide's step (hoverFragmentSlide) so the narration's time updates do not take it straight back.
+ * Answers true when there was a step to show.
+ */
+function showFragmentForNoteLine(slideIndex, noteId) {
+    const slideData = articleRevealInstances.find(s => s.index === slideIndex);
+    const slideCard = document.getElementById(`slide-${slideIndex}`);
+
+    if (!slideData || !slideData.instance || !slideCard) return false;
+
+    const lines = slideCard.querySelectorAll('[data-start][data-end]');
+    let position = -1;
+
+    for (let i = 0; i < lines.length; i++) {
+        if ((lines[i].getAttribute('data-note-id') || lines[i].id) === noteId) {
+            position = i;
+            break;
+        }
+    }
+
+    if (position < 0) return false;
+
+    const section = slideData.element.querySelector('section');
+    const fragmentsOff = section ? section.querySelectorAll('.fragment-off') : [];
+
+    if (fragmentsOff.length > 0) {
+        fragmentsOff.forEach(f => {
+            f.classList.remove('fragment-off');
+            f.classList.remove('visible');
+            f.classList.add('fragment');
+        });
+
+        // The step it was on meant "everything drawn"; forget it so the step below is applied.
+        slideData.appliedFragment = undefined;
+
+        if (dotNetRef) dotNetRef.invokeMethodAsync('ShowArticleSlideFragmentControls', slideIndex);
+    }
+
+    applyArticleFragment(slideData, slideIndex, spokenLineIndex(lines, position));
+
+    return true;
+}
+
+function markNoteLine(slideIndex, noteId) {
+    document.querySelectorAll('.slide-notes .note-line.selected')
+        .forEach(element => element.classList.remove('selected'));
+
+    markedNoteLine = { slideIndex, noteId };
+
+    noteLinePieces(slideIndex, noteId).forEach(element => element.classList.add('selected'));
+    hoverNoteLine(markedNoteLine);
+}
+
+/**
+ * A click in a slide's notes: on a line's Play or Copy button, that; on a line, marks it. Nothing plays
+ * until Play is pressed. A comment's icon inside a line is left to show its comment.
  */
 function onNotesHtmlClick(event) {
-    const line = event.target && event.target.closest
-        ? event.target.closest('.slide-notes-html .note-line')
-        : null;
+    const target = event.target;
 
-    if (!line || !dotNetRef) return;
+    if (!target || !target.closest) return;
 
-    const noteId = line.getAttribute('data-note-id') || line.id;
+    const button = target.closest('#noteLineActions button');
+
+    if (button) {
+        event.preventDefault();
+        onNoteLineAction(button);
+        return;
+    }
+
+    const line = target.closest(NOTE_LINE_SELECTOR);
+
+    if (!line || target.closest('.dmws-comment')) return;
+
+    const noteId = noteIdOf(line);
     const slideIndex = parseInt(line.getAttribute('data-slide-index'));
 
     if (!noteId || !slideIndex) return;
 
-    dotNetRef.invokeMethodAsync('OnNoteLineClicked', slideIndex, noteId);
+    markNoteLine(slideIndex, noteId);
+}
+
+function onNoteLineHover(event) {
+    const target = event.target;
+
+    if (!target || !target.closest || target.closest('#noteLineActions')) return;
+
+    const line = target.closest(NOTE_LINE_SELECTOR);
+
+    if (line) {
+        const noteId = noteIdOf(line);
+        const slideIndex = parseInt(line.getAttribute('data-slide-index'));
+
+        if (noteId && slideIndex
+            && !(shownNoteLine && shownNoteLine.noteId === noteId && shownNoteLine.slideIndex === slideIndex
+                 && hoverFragmentSlide === slideIndex)) {
+            hoverNoteLine({ slideIndex, noteId });
+        }
+        return;
+    }
+
+    // Off every line — once, not on every move over the rest of the page.
+    if (hoverFragmentSlide !== null || (shownNoteLine && (!markedNoteLine
+        || shownNoteLine.noteId !== markedNoteLine.noteId
+        || shownNoteLine.slideIndex !== markedNoteLine.slideIndex))) {
+        leaveNoteLines();
+    }
+}
+
+/** The buttons are fixed to the window, so they follow their line when anything scrolls. */
+function onNoteLineScroll() {
+    if (shownNoteLine) showNoteLineActions(shownNoteLine);
+}
+
+function onNoteLineAction(button) {
+    const target = shownNoteLine;
+
+    if (!target) return;
+
+    if (button.getAttribute('data-action') === 'play') {
+        // A toggle: Pause while a narration plays, Play from this line otherwise. The media's own pause
+        // event tells .NET, as the toolbar's pause does.
+        const playing = playingNarration();
+
+        if (playing) playing.pause();
+        else if (dotNetRef) dotNetRef.invokeMethodAsync('OnNoteLinePlay', target.slideIndex, target.noteId);
+
+        return;
+    }
+
+    copyNoteLine(target, button);
+}
+
+/** Copies a line's words — every piece of it, without the author's comments — to the clipboard. */
+function copyNoteLine(target, button) {
+    const text = noteLinePieces(target.slideIndex, target.noteId)
+        .map(piece => {
+            const copy = piece.cloneNode(true);
+            copy.querySelectorAll('.dmws-comment').forEach(comment => comment.remove());
+            return copy.textContent;
+        })
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (!text) return;
+
+    const done = () => {
+        button.classList.add('copied');
+        button.textContent = 'check';
+        setTimeout(() => {
+            button.classList.remove('copied');
+            button.textContent = 'content_copy';
+        }, 1200);
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, () => copyWithSelection(text) && done());
+    } else if (copyWithSelection(text)) {
+        done();
+    }
+}
+
+/** The clipboard for a page the Clipboard API is not allowed on — an http:// preview, an old WebView. */
+function copyWithSelection(text) {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+
+    let copied = false;
+    try { copied = document.execCommand('copy'); } catch (e) { copied = false; }
+
+    area.remove();
+    return copied;
 }
 
 /**
@@ -484,6 +812,16 @@ export function dispose() {
     }
     
     document.removeEventListener('click', onNotesHtmlClick);
+    document.removeEventListener('mouseover', onNoteLineHover);
+    document.removeEventListener('scroll', onNoteLineScroll, true);
+    document.removeEventListener('play', onNarrationPlayOrPause, true);
+    document.removeEventListener('pause', onNarrationPlayOrPause, true);
+
+    if (noteLineActions) noteLineActions.remove();
+    hoverFragmentSlide = null;
+    noteLineActions = null;
+    markedNoteLine = null;
+    shownNoteLine = null;
 
     dotNetRef = null;
     youtubePlayer = null;
@@ -3023,7 +3361,7 @@ function handleConsolidatedMediaTimeUpdate(mediaElement, slideIndex) {
 
         // Navigate to matching fragment in article view
         const slideData = articleRevealInstances.find(s => s.index === idx);
-        if (slideData && slideData.instance && matchedLineIndex >= 0) {
+        if (slideData && slideData.instance && matchedLineIndex >= 0 && hoverFragmentSlide !== idx) {
             applyArticleFragment(slideData, idx, spokenLineIndex(lines, matchedLineIndex));
         }
 
