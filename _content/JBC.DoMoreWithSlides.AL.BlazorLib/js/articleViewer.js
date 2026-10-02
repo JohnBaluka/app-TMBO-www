@@ -466,14 +466,17 @@ function ensureNoteLineActions() {
         '<button type="button" id="noteLinePlayButton" data-action="play" title="Play from this line" aria-label="Play from this line">play_arrow</button>' +
         '<button type="button" id="noteLineCopyButton" data-action="copy" title="Copy this line" aria-label="Copy this line">content_copy</button>';
 
-    // Leaving the buttons for anywhere but the line they belong to goes back to the marked line.
+    // Leaving the buttons for anywhere but the line they belong to goes back to the marked line — after the
+    // same grace a line gets, so a pointer that slips off the edge and back does not lose them.
     noteLineActions.addEventListener('mouseleave', event => {
         const into = event.relatedTarget && event.relatedTarget.closest
             ? event.relatedTarget.closest(NOTE_LINE_SELECTOR)
             : null;
 
-        if (!into) leaveNoteLines();
+        if (!into) scheduleLeaveNoteLines();
     });
+
+    noteLineActions.addEventListener('mouseenter', cancelLeaveNoteLines);
 
     document.body.appendChild(noteLineActions);
 
@@ -555,10 +558,61 @@ function hoverNoteLine(target) {
 }
 
 /**
+ * How long the buttons stay after the pointer leaves a line, in milliseconds. The buttons sit just above
+ * the line, and on the way up to them the pointer crosses the gap between — which is off every line —
+ * so without a grace they moved away the moment the user reached for them (the user's report, 2026-10-02).
+ */
+const NOTE_LINE_LEAVE_GRACE_MS = 400;
+
+let noteLineLeaveTimer = null;
+
+function scheduleLeaveNoteLines() {
+    if (noteLineLeaveTimer) return;
+
+    noteLineLeaveTimer = setTimeout(() => {
+        noteLineLeaveTimer = null;
+        leaveNoteLines();
+    }, NOTE_LINE_LEAVE_GRACE_MS);
+}
+
+function cancelLeaveNoteLines() {
+    if (!noteLineLeaveTimer) return;
+
+    clearTimeout(noteLineLeaveTimer);
+    noteLineLeaveTimer = null;
+}
+
+/** True when a line's buttons still have a line on screen to sit beside. */
+function isNoteLineShowing(target) {
+    const pieces = target ? noteLinePieces(target.slideIndex, target.noteId) : [];
+
+    return pieces.length > 0 && pieces[0].offsetParent !== null && pieces[0].getClientRects().length > 0;
+}
+
+/**
+ * Takes the buttons away and forgets the line they were beside — called by .NET when the Main View changes
+ * view, because the buttons are fixed to the window and outlive the article they were drawn for (the user's
+ * report, 2026-10-02: they stayed over the Slides view). The marked line is forgotten too, so they do not
+ * come back beside it until the article is shown and a line is hovered or clicked again.
+ */
+export function hideNoteLineActions() {
+    cancelLeaveNoteLines();
+    hoverFragmentSlide = null;
+    markedNoteLine = null;
+    shownNoteLine = null;
+
+    document.querySelectorAll('.slide-notes .note-line.selected')
+        .forEach(element => element.classList.remove('selected'));
+
+    if (noteLineActions) noteLineActions.classList.remove('visible');
+}
+
+/**
  * The pointer left every line: the buttons go back to the marked line, or away, and the narration has
  * its step back. With nothing playing, the marked line's step is shown again.
  */
 function leaveNoteLines() {
+    cancelLeaveNoteLines();
     hoverFragmentSlide = null;
 
     showNoteLineActions(markedNoteLine);
@@ -657,11 +711,24 @@ function onNotesHtmlClick(event) {
 function onNoteLineHover(event) {
     const target = event.target;
 
-    if (!target || !target.closest || target.closest('#noteLineActions')) return;
+    if (!target || !target.closest) return;
+
+    if (target.closest('#noteLineActions')) {
+        cancelLeaveNoteLines();
+        return;
+    }
+
+    // Buttons left over a line that is no longer drawn — its view was swapped out — go at once.
+    if (shownNoteLine && !isNoteLineShowing(shownNoteLine)) {
+        if (markedNoteLine && !isNoteLineShowing(markedNoteLine)) markedNoteLine = null;
+        leaveNoteLines();
+    }
 
     const line = target.closest(NOTE_LINE_SELECTOR);
 
     if (line) {
+        cancelLeaveNoteLines();
+
         const noteId = noteIdOf(line);
         const slideIndex = parseInt(line.getAttribute('data-slide-index'));
 
@@ -673,11 +740,12 @@ function onNoteLineHover(event) {
         return;
     }
 
-    // Off every line — once, not on every move over the rest of the page.
+    // Off every line — once, not on every move over the rest of the page, and after a grace (see
+    // NOTE_LINE_LEAVE_GRACE_MS) so the pointer can cross to the buttons.
     if (hoverFragmentSlide !== null || (shownNoteLine && (!markedNoteLine
         || shownNoteLine.noteId !== markedNoteLine.noteId
         || shownNoteLine.slideIndex !== markedNoteLine.slideIndex))) {
-        leaveNoteLines();
+        scheduleLeaveNoteLines();
     }
 }
 
@@ -817,6 +885,7 @@ export function dispose() {
     document.removeEventListener('play', onNarrationPlayOrPause, true);
     document.removeEventListener('pause', onNarrationPlayOrPause, true);
 
+    cancelLeaveNoteLines();
     if (noteLineActions) noteLineActions.remove();
     hoverFragmentSlide = null;
     noteLineActions = null;
@@ -827,6 +896,9 @@ export function dispose() {
     youtubePlayer = null;
     presentationReveal = null;
     filmPlayerBound = null;
+    // Taken off, not just forgotten: the next Main View may listen to the same element (see unbindMediaListeners).
+    unbindMediaListeners(consolidatedAudioListenersAttached);
+    unbindMediaListeners(consolidatedVideoListenersAttached);
     consolidatedAudioListenersAttached = null;
     consolidatedVideoListenersAttached = null;
     logDebug('ArticleViewer JS module disposed');
@@ -1865,6 +1937,7 @@ function createYouTubePlayer(container, videoId) {
                 'onReady': () => {
                     youtubePlayerReady = true;
                     logInfo('YouTube player ready');
+                    applyYouTubeSettings();
                 },
                 'onStateChange': (event) => {
                     const stateNames = {
@@ -1971,6 +2044,10 @@ export function initializeFilmPlayer() {
 
     if (filmPlayerBound === film) return;
     filmPlayerBound = film;
+
+    // The page's volume and speed, and the film's own controls reported back - see onMediaSettingChanged.
+    Object.entries(mediaSettingHandlers).forEach(([name, handler]) => film.addEventListener(name, handler));
+    applyMediaSettings(film);
 
     film.addEventListener('timeupdate', () => {
         const currentTime = film.currentTime;
@@ -3001,6 +3078,7 @@ export function seekConsolidatedAudio(slideIndex, time) {
 // that is drawn again — another page, the Slide Site Preview after an edit, the designer's center —
 // replaces them. A flag set once for the life of this module left every later element with no
 // listeners at all, so nothing it played moved the notes, the animations or the next slide.
+// Each holds { element, handlers } from bindMediaListeners, so the listeners can be taken off again.
 let consolidatedAudioListenersAttached = null;
 let consolidatedAudioSlideIndex = 0;
 
@@ -3514,42 +3592,59 @@ function handleConsolidatedMediaEnded(mediaElement, getSlideIndex, setSlideIndex
  */
 function setupConsolidatedAudioListeners(audio, slideIndex) {
     consolidatedAudioSlideIndex = slideIndex;
-    if (consolidatedAudioListenersAttached === audio) return;
-    consolidatedAudioListenersAttached = audio;
+    if (consolidatedAudioListenersAttached && consolidatedAudioListenersAttached.element === audio) return;
+    unbindMediaListeners(consolidatedAudioListenersAttached);
 
-    audio.addEventListener('timeupdate', () => {
-        handleConsolidatedMediaTimeUpdate(audio, consolidatedAudioSlideIndex);
-        // Schedule a delayed reset of the retry counter after sustained playback.
-        if (audioDecodeRetryCount > 0 && !audioRecovering) {
-            if (audioRetryResetTimer) clearTimeout(audioRetryResetTimer);
-            audioRetryResetTimer = setTimeout(() => {
-                audioDecodeRetryCount = 0;
-                audioRetryResetTimer = null;
-                logDebug('Audio decode retry counter reset after sustained playback');
-            }, RETRY_RESET_AFTER_MS);
-        }
-    });
-
-    audio.addEventListener('play', () => {
-        handleConsolidatedMediaPlay(consolidatedAudioSlideIndex, 'audio');
-    });
-
-    audio.addEventListener('pause', () => {
-        handleConsolidatedMediaPause('audio');
-    });
-
-    audio.addEventListener('ended', () => {
-        handleConsolidatedMediaEnded(
+    consolidatedAudioListenersAttached = bindMediaListeners(audio, {
+        ...mediaSettingHandlers,
+        timeupdate: () => {
+            handleConsolidatedMediaTimeUpdate(audio, consolidatedAudioSlideIndex);
+            // Schedule a delayed reset of the retry counter after sustained playback.
+            if (audioDecodeRetryCount > 0 && !audioRecovering) {
+                if (audioRetryResetTimer) clearTimeout(audioRetryResetTimer);
+                audioRetryResetTimer = setTimeout(() => {
+                    audioDecodeRetryCount = 0;
+                    audioRetryResetTimer = null;
+                    logDebug('Audio decode retry counter reset after sustained playback');
+                }, RETRY_RESET_AFTER_MS);
+            }
+        },
+        play: () => handleConsolidatedMediaPlay(consolidatedAudioSlideIndex, 'audio'),
+        pause: () => handleConsolidatedMediaPause('audio'),
+        ended: () => handleConsolidatedMediaEnded(
             audio,
             () => consolidatedAudioSlideIndex,
             (idx) => { consolidatedAudioSlideIndex = idx; },
             false
-        );
+        ),
+        error: () => handleMediaDecodeError(audio, consolidatedAudioSlideIndex, false)
     });
 
-    audio.addEventListener('error', () => {
-        handleMediaDecodeError(audio, consolidatedAudioSlideIndex, false);
-    });
+    applyMediaSettings(audio);
+}
+
+/**
+ * Puts listeners on a media element and returns what is needed to take them off again.
+ * @param {HTMLMediaElement} element
+ * @param {Object<string, function>} handlers - { [eventName]: handler }
+ * @returns {{ element: HTMLMediaElement, handlers: Object<string, function> }}
+ */
+function bindMediaListeners(element, handlers) {
+    Object.entries(handlers).forEach(([name, handler]) => element.addEventListener(name, handler));
+    return { element, handlers };
+}
+
+/**
+ * Takes off the listeners bindMediaListeners put on, or does nothing for null.
+ *
+ * Needed because an element can outlive the Main View that listened to it: the Slide Site Designer's
+ * Player panel holds the two consolidated players outside its embedded Main View, so when that view is
+ * drawn again the same element was listened to twice — and on `ended` the first handler moved to the
+ * next slide and the second, reading the index the first had just moved, moved on past it.
+ */
+function unbindMediaListeners(binding) {
+    if (!binding) return;
+    Object.entries(binding.handlers).forEach(([name, handler]) => binding.element.removeEventListener(name, handler));
 }
 
 /**
@@ -3558,43 +3653,36 @@ function setupConsolidatedAudioListeners(audio, slideIndex) {
  */
 function setupConsolidatedVideoListeners(video, slideIndex) {
     consolidatedVideoSlideIndex = slideIndex;
-    if (consolidatedVideoListenersAttached === video) return;
-    consolidatedVideoListenersAttached = video;
+    if (consolidatedVideoListenersAttached && consolidatedVideoListenersAttached.element === video) return;
+    unbindMediaListeners(consolidatedVideoListenersAttached);
 
-    video.addEventListener('timeupdate', () => {
-        handleConsolidatedMediaTimeUpdate(video, consolidatedVideoSlideIndex);
-        // Schedule a delayed reset of the retry counter after sustained playback.
-        // This avoids immediately resetting between rapid error/recovery cycles.
-        if (videoDecodeRetryCount > 0 && !videoRecovering) {
-            if (videoRetryResetTimer) clearTimeout(videoRetryResetTimer);
-            videoRetryResetTimer = setTimeout(() => {
-                videoDecodeRetryCount = 0;
-                videoRetryResetTimer = null;
-                logDebug('Video decode retry counter reset after sustained playback');
-            }, RETRY_RESET_AFTER_MS);
-        }
-    });
-
-    video.addEventListener('play', () => {
-        handleConsolidatedMediaPlay(consolidatedVideoSlideIndex, 'video');
-    });
-
-    video.addEventListener('pause', () => {
-        handleConsolidatedMediaPause('video');
-    });
-
-    video.addEventListener('ended', () => {
-        handleConsolidatedMediaEnded(
+    consolidatedVideoListenersAttached = bindMediaListeners(video, {
+        ...mediaSettingHandlers,
+        timeupdate: () => {
+            handleConsolidatedMediaTimeUpdate(video, consolidatedVideoSlideIndex);
+            // Schedule a delayed reset of the retry counter after sustained playback.
+            // This avoids immediately resetting between rapid error/recovery cycles.
+            if (videoDecodeRetryCount > 0 && !videoRecovering) {
+                if (videoRetryResetTimer) clearTimeout(videoRetryResetTimer);
+                videoRetryResetTimer = setTimeout(() => {
+                    videoDecodeRetryCount = 0;
+                    videoRetryResetTimer = null;
+                    logDebug('Video decode retry counter reset after sustained playback');
+                }, RETRY_RESET_AFTER_MS);
+            }
+        },
+        play: () => handleConsolidatedMediaPlay(consolidatedVideoSlideIndex, 'video'),
+        pause: () => handleConsolidatedMediaPause('video'),
+        ended: () => handleConsolidatedMediaEnded(
             video,
             () => consolidatedVideoSlideIndex,
             (idx) => { consolidatedVideoSlideIndex = idx; },
             true
-        );
+        ),
+        error: () => handleMediaDecodeError(video, consolidatedVideoSlideIndex, true)
     });
 
-    video.addEventListener('error', () => {
-        handleMediaDecodeError(video, consolidatedVideoSlideIndex, true);
-    });
+    applyMediaSettings(video);
 }
 
 
@@ -3717,48 +3805,101 @@ function handleMediaDecodeError(mediaElement, slideIndex, isVideo) {
     });
 }
 
-/**
- * Sets the playback rate on the consolidated audio player, video player, and YouTube player.
- */
-export function setPlaybackRate(rate) {
-    logDebug(`setPlaybackRate: ${rate}`);
-    const audio = getConsolidatedAudio();
-    if (audio) {
-        audio.playbackRate = rate;
-    }
-    const video = getConsolidatedVideo();
-    if (video) {
-        video.playbackRate = rate;
-    }
-    if (youtubePlayer && youtubePlayerReady) {
-        try {
-            youtubePlayer.setPlaybackRate(rate);
-        } catch (e) {
-            logWarning(`setPlaybackRate YouTube error: ${e.message}`);
-        }
+// ===== Volume and playback speed =====
+//
+// One volume and one speed for the page, held here and put on every player the page plays through — the two
+// consolidated players, the film and YouTube — whenever one is set and whenever a player is first listened to.
+// The toolbar used to set them on the two consolidated players only, once (the user's report, 2026-10-02:
+// "not truly reflecting the state"):
+//  - every new source (`load()`, which the move to the next slide does) puts `playbackRate` back to
+//    `defaultPlaybackRate`, so 1.5x went back to 1x at the next slide while the toolbar still said 1.5x;
+//    both are set now;
+//  - the film never had either, so the Video view ignored the toolbar;
+//  - a player's own controls (the Designer's Player panel, the Main View's Player panel) changed the element
+//    and the toolbar never heard; `volumechange` and `ratechange` now report it back (mediaSettingsChanged).
+
+let narrationVolume = 1;
+let narrationRate = 1;
+
+/** The volume a player is actually at — a muted player is at nought whatever its volume says. */
+function effectiveVolume(element) {
+    return element.muted ? 0 : element.volume;
+}
+
+/** Every element the page's volume and speed belong on. */
+function mediaElementsForSettings() {
+    return [getConsolidatedAudio(), getConsolidatedVideo(), getFilmPlayer()].filter(Boolean);
+}
+
+/** Puts the page's volume and speed on one player. Setting what it already has fires no event. */
+function applyMediaSettings(element) {
+    if (!element) return;
+
+    if (element.muted && narrationVolume > 0) element.muted = false;
+    if (element.volume !== narrationVolume) element.volume = narrationVolume;
+    if (element.defaultPlaybackRate !== narrationRate) element.defaultPlaybackRate = narrationRate;
+    if (element.playbackRate !== narrationRate) element.playbackRate = narrationRate;
+}
+
+function applyYouTubeSettings() {
+    if (!youtubePlayer || !youtubePlayerReady) return;
+
+    try {
+        youtubePlayer.setVolume(narrationVolume * 100);
+        youtubePlayer.setPlaybackRate(narrationRate);
+    } catch (e) {
+        logWarning(`YouTube volume/speed error: ${e.message}`);
     }
 }
 
+function applyMediaSettingsEverywhere() {
+    mediaElementsForSettings().forEach(applyMediaSettings);
+    applyYouTubeSettings();
+}
+
 /**
- * Sets the volume on the consolidated audio player, video player, and YouTube player.
+ * A player's volume or speed changed. When it is not what the page holds — the user moved the player's own
+ * control — the page takes it, the other players follow, and .NET is told so the toolbar says it. A change
+ * this module made itself matches what the page holds and is ignored.
+ */
+function onMediaSettingChanged(event) {
+    const element = event.target;
+    const volume = effectiveVolume(element);
+    const rate = element.playbackRate;
+
+    if (volume === narrationVolume && rate === narrationRate) return;
+
+    narrationVolume = volume;
+    narrationRate = rate;
+
+    mediaElementsForSettings().filter(other => other !== element).forEach(applyMediaSettings);
+    applyYouTubeSettings();
+
+    if (dotNetRef) dotNetRef.invokeMethodAsync('UpdateMediaSettings', volume, rate);
+}
+
+/** The two listeners that report a player's own volume and speed changes — see onMediaSettingChanged. */
+const mediaSettingHandlers = {
+    volumechange: onMediaSettingChanged,
+    ratechange: onMediaSettingChanged
+};
+
+/**
+ * Sets the playback rate on every player the page plays through.
+ */
+export function setPlaybackRate(rate) {
+    logDebug(`setPlaybackRate: ${rate}`);
+    narrationRate = rate;
+    applyMediaSettingsEverywhere();
+}
+
+/**
+ * Sets the volume on every player the page plays through.
  */
 export function setVolume(volume) {
     logDebug(`setVolume: ${volume}`);
-    const audio = getConsolidatedAudio();
-    if (audio) {
-        audio.volume = volume;
-    }
-    const video = getConsolidatedVideo();
-    if (video) {
-        video.volume = volume;
-    }
-    if (youtubePlayer && youtubePlayerReady) {
-        try {
-            youtubePlayer.setVolume(volume * 100);
-        } catch (e) {
-            logWarning(`setVolume YouTube error: ${e.message}`);
-        }
-    }
+    narrationVolume = volume;
+    applyMediaSettingsEverywhere();
 }
 
 /**
