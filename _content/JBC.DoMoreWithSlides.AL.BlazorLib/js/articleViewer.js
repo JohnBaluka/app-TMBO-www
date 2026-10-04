@@ -940,7 +940,7 @@ function setupAudioListeners() {
                             
                             if (now >= start && now <= end) {
                                 const noteId = line.getAttribute('data-note-id') || line.id;
-                                const absoluteTime = startVideo + (now - start);
+                                const absoluteTime = pageTimeOf(slideIndex, now, startVideo + (now - start));
                                 invokeCurrentNoteUpdate(noteId, slideIndex, absoluteTime);
                                 break;
                             }
@@ -954,7 +954,7 @@ function setupAudioListeners() {
                         const firstLine = notesContainer.querySelector('[data-start-video]');
                         if (firstLine) {
                             const slideStartVideo = parseFloat(firstLine.getAttribute('data-start-video')) || 0;
-                            const absoluteTime = slideStartVideo + audio.currentTime;
+                            const absoluteTime = pageTimeOf(slideIndex, audio.currentTime, slideStartVideo + audio.currentTime);
                             
                             // Update progress bar directly in JS (no Blazor round-trip)
                             updateProgressBarDirect(absoluteTime);
@@ -1095,7 +1095,7 @@ function attachPresentationAudioListeners(audio) {
 
             if (now >= start && now <= end) {
                 const noteId = line.getAttribute('data-note-id') || line.id;
-                const absoluteTime = startVideo + (now - start);
+                const absoluteTime = pageTimeOf(slideIndex, now, startVideo + (now - start));
                 updateProgressBarDirect(absoluteTime);
 
                 const timestampNow = Date.now();
@@ -1121,7 +1121,7 @@ function attachPresentationAudioListeners(audio) {
             const firstLine = notesEl.querySelector('[data-start-video]');
             if (firstLine) {
                 const slideStartVideo = parseFloat(firstLine.getAttribute('data-start-video')) || 0;
-                const absoluteTime = slideStartVideo + now;
+                const absoluteTime = pageTimeOf(slideIndex, now, slideStartVideo + now);
                 updateProgressBarDirect(absoluteTime);
 
                 const timestampNow = Date.now();
@@ -2590,6 +2590,9 @@ export function setupProgressBarInteractions(totalDurationMs, slideCount, siteBa
     
     // Collect slide timing data from the DOM
     function getSlideForTime(hoverTime) {
+        const onNarration = narrationSlideAt(hoverTime);
+        if (onNarration) return onNarration.slideIndex;
+
         const allLines = document.querySelectorAll('[data-start-video][data-slide-index]');
         let thumbnailSlideIndex = 1;
         for (let i = allLines.length - 1; i >= 0; i--) {
@@ -2617,7 +2620,13 @@ export function setupProgressBarInteractions(totalDurationMs, slideCount, siteBa
         const rect = container.getBoundingClientRect();
         const clickX = e.clientX - rect.left;
         const percentage = Math.max(0, Math.min(1, clickX / rect.width));
-        const seekTime = percentage * totalDuration;
+        const seekTime = percentage * (cachedTotalDuration > 0 ? cachedTotalDuration : totalDuration);
+
+        // On the narration's clock the bar is the slides' recordings end to end - see narrationSlideAt.
+        const onNarration = narrationSlideAt(seekTime);
+        if (onNarration) {
+            return { percentage, seekTime, targetSlideIndex: onNarration.slideIndex, targetAudioTime: onNarration.slideSeconds };
+        }
 
         let targetSlideIndex = 1;
         let targetAudioTime = seekTime;
@@ -2704,7 +2713,7 @@ export function setupProgressBarInteractions(totalDurationMs, slideCount, siteBa
             const rect = containerEl.getBoundingClientRect();
             const hoverX = e.clientX - rect.left;
             const percentage = Math.max(0, Math.min(1, hoverX / rect.width));
-            const hoverTime = percentage * totalDuration;
+            const hoverTime = percentage * (cachedTotalDuration > 0 ? cachedTotalDuration : totalDuration);
             
             const slideIdx = getSlideForTime(hoverTime);
 
@@ -3118,6 +3127,70 @@ export function setSlideMediaMap(map) {
     logDebug(`setSlideMediaMap: ${Object.keys(slideMediaMap).length} slides`);
 }
 
+// ===== The page's clock =====
+//
+// Two clocks, one per kind of view (the user's rule, 2026-10-02): the Video and YouTube views play a film
+// with every slide's transition in it, so their times are the film's - each line's data-start-video. The
+// Article and Slides views play each slide's own recording one after another, with no transitions between
+// them, so their times are the narration's: where the slide's recording starts in the page, plus how far
+// into it. .NET hands the table over (MainViewState.ScriptClock) when the page is drawn and at every view
+// switch; the film-clock conversions between views keep reading the markup's data-start-video as before.
+
+/** { film: bool, total: seconds, byIndex: { [slideIndex]: { filmStart, narrationStart, length } }, order: [] } */
+let pageClock = { film: true, total: 0, byIndex: {}, order: [] };
+
+/**
+ * Takes the clock the current view shows - and its total, which is what the progress bar fills against.
+ * @param {{ film: boolean, total: number, slides: Array<{ index: number, filmStart: number, narrationStart: number, length: number }> }} clock
+ */
+export function setPageClock(clock) {
+    const slides = (clock && clock.slides) || [];
+    const byIndex = {};
+
+    slides.forEach(slide => { byIndex[slide.index] = slide; });
+
+    pageClock = {
+        film: !clock || clock.film !== false,
+        total: (clock && clock.total) || 0,
+        byIndex,
+        order: slides.slice().sort((a, b) => a.narrationStart - b.narrationStart)
+    };
+
+    if (pageClock.total > 0) cachedTotalDuration = pageClock.total;
+
+    logDebug(`setPageClock: ${pageClock.film ? 'film' : 'narration'} clock, ${slides.length} slides, total ${pageClock.total}s`);
+}
+
+/**
+ * A moment of one slide's recording on the page's clock: on the narration's, where that slide's recording
+ * starts plus how far into it; on the film's (or for a slide the table does not have) the film time the
+ * caller worked out from the markup, which is what every caller did before.
+ */
+function pageTimeOf(slideIndex, slideSeconds, filmSeconds) {
+    if (pageClock.film) return filmSeconds;
+
+    const slide = pageClock.byIndex[slideIndex];
+
+    return slide ? slide.narrationStart + Math.max(0, slideSeconds) : filmSeconds;
+}
+
+/**
+ * Which slide a moment on the narration's clock falls in, and how far into its recording - or null on the
+ * film's clock, where the markup's data-start-video answers as before.
+ */
+function narrationSlideAt(seconds) {
+    if (pageClock.film || pageClock.order.length === 0) return null;
+
+    let found = pageClock.order[0];
+
+    for (const slide of pageClock.order) {
+        if (seconds >= slide.narrationStart) found = slide;
+        else break;
+    }
+
+    return { slideIndex: found.index, slideSeconds: Math.max(0, seconds - found.narrationStart) };
+}
+
 /**
  * Looks up the resolved media URL for a given slide index.
  * @param {number} slideIndex - 1-based slide index
@@ -3368,6 +3441,9 @@ function handleConsolidatedMediaTimeUpdate(mediaElement, slideIndex) {
         }
     }
 
+    // The narration's clock in the Article and Slides views - see pageTimeOf.
+    absoluteTime = pageTimeOf(idx, currentTime, absoluteTime);
+
     // Always update progress bars directly (no throttle for visual smoothness)
     updateProgressBarDirect(absoluteTime);
 
@@ -3422,7 +3498,7 @@ function handleConsolidatedMediaTimeUpdate(mediaElement, slideIndex) {
             if (currentTime >= start && currentTime < end && noteId) {
                 matchedLineIndex = i;
                 const videoStart = parseFloat(line.getAttribute('data-start-video') || '0');
-                const timestamp = videoStart + (currentTime - start);
+                const timestamp = pageTimeOf(noteSlideIndex, currentTime, videoStart + (currentTime - start));
 
                 invokeCurrentNoteUpdate(noteId, noteSlideIndex, timestamp);
 
