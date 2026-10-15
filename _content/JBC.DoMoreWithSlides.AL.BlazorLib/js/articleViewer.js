@@ -2826,6 +2826,11 @@ export function setupSidebarThumbnailHover(siteBaseUrl) {
         if (!imgEl) return;
         
         imgEl.addEventListener('mouseenter', (e) => {
+            // A touch screen raises mouseenter on a tap and no mouseleave until the next one, so the
+            // enlargement stayed over the page after the tap had chosen the slide and put the page
+            // navigation away. A screen with no hover has no preview.
+            if (window.matchMedia && window.matchMedia('(hover: none)').matches) return;
+
             const src = imgEl.src;
             popupImage.src = src;
             
