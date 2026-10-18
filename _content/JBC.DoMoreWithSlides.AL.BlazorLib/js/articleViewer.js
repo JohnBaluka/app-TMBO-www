@@ -1,4 +1,11 @@
 // Article Viewer JavaScript Interop for Blazor
+//
+// Two engines draw the article's slides and the slide show: Reveal.js over each slide's SVG (the Article and
+// Slides views) and Blazor Office's own player over each slide's Generated (PPTX) drawing (Article (PPTX) and
+// Slides (PPTX)) — see pptxViewer.js. The second answers the calls this file makes of a Reveal instance, so
+// articleRevealInstances and presentationReveal hold either; `isPptx` says which.
+import * as Pptx from './pptxViewer.js';
+
 let dotNetRef = null;
 let youtubePlayer = null;
 let youtubePlayerReady = false;
@@ -106,6 +113,10 @@ function applyPresentationFragment(lineIndex) {
 // looking at both .fragment and .fragment-off elements
 function countUniqueFragments(slideElement) {
     if (!slideElement) return 0;
+    // A slide drawn by Blazor Office's player says how many clicks it has; it has no fragment elements.
+    if (slideElement.dataset && slideElement.dataset.pptxClicks !== undefined) {
+        return parseInt(slideElement.dataset.pptxClicks, 10) || 0;
+    }
     const fragmentElements = slideElement.querySelectorAll('[data-fragment-index]');
     const uniqueIndexes = new Set();
     fragmentElements.forEach(el => {
@@ -210,7 +221,8 @@ function getPresentationAspectRatio() {
 function resizePresentationLayout() {
     const wrapper = document.getElementById('presentationViewWrapper');
     const container = document.getElementById('presentationContainer');
-    const revealEl = document.getElementById('presentationReveal');
+    // Reveal's element in the Slides view, the player's in Slides (PPTX).
+    const revealEl = document.getElementById('presentationReveal') || document.getElementById('presentationPptx');
 
     if (!wrapper || !container || !revealEl) {
         return;
@@ -410,6 +422,8 @@ export async function initialize(dotNet, level = 3) {
     document.addEventListener('play', onNarrationPlayOrPause, true);
     document.removeEventListener('pause', onNarrationPlayOrPause, true);
     document.addEventListener('pause', onNarrationPlayOrPause, true);
+    document.removeEventListener('ended', onNarrationPlayOrPause, true);
+    document.addEventListener('ended', onNarrationPlayOrPause, true);
 
     logInfo('ArticleViewer JS module initialized');
 }
@@ -544,10 +558,21 @@ function refreshNoteLinePlayButton() {
     button.setAttribute('aria-label', label);
 }
 
-/** A media element started or stopped somewhere — media events do not bubble, so this listens capturing. */
+/**
+ * A media element started or stopped somewhere — media events do not bubble, so this listens capturing. A
+ * narration stopping puts the slides back to fully built (scheduleRestAllSlides); one starting keeps them.
+ */
 function onNarrationPlayOrPause(event) {
-    if (event.target && (event.target.tagName === 'AUDIO' || event.target.tagName === 'VIDEO'))
-        refreshNoteLinePlayButton();
+    const media = event.target;
+
+    if (!media || (media.tagName !== 'AUDIO' && media.tagName !== 'VIDEO')) return;
+
+    refreshNoteLinePlayButton();
+
+    if (!NARRATION_PLAYER.test(media.id || '')) return;
+
+    if (event.type === 'play') cancelRestAllSlides();
+    else scheduleRestAllSlides();
 }
 
 /** The pointer is over a line: its buttons, and its animation step held until the pointer leaves the lines. */
@@ -609,7 +634,8 @@ export function hideNoteLineActions() {
 
 /**
  * The pointer left every line: the buttons go back to the marked line, or away, and the narration has
- * its step back. With nothing playing, the marked line's step is shown again.
+ * its step back. With nothing playing every slide is drawn fully built again — the marked line keeps its
+ * highlight and its buttons, not its step (the user's rule, 2026-10-16; until then it held its step).
  */
 function leaveNoteLines() {
     cancelLeaveNoteLines();
@@ -617,8 +643,7 @@ function leaveNoteLines() {
 
     showNoteLineActions(markedNoteLine);
 
-    if (markedNoteLine && !isNarrationPlaying())
-        showFragmentForNoteLine(markedNoteLine.slideIndex, markedNoteLine.noteId);
+    if (!isAnyNarrationPlaying()) restAllSlides();
 }
 
 /**
@@ -662,6 +687,11 @@ function showFragmentForNoteLine(slideIndex, noteId) {
         slideData.appliedFragment = undefined;
 
         if (dotNetRef) dotNetRef.invokeMethodAsync('ShowArticleSlideFragmentControls', slideIndex);
+    }
+
+    // A slide Blazor Office's player draws is built the same way until a line asks for its steps.
+    if (wakePptxArticleSlide(slideIndex) && dotNetRef) {
+        dotNetRef.invokeMethodAsync('ShowArticleSlideFragmentControls', slideIndex);
     }
 
     applyArticleFragment(slideData, slideIndex, spokenLineIndex(lines, position));
@@ -884,8 +914,10 @@ export function dispose() {
     document.removeEventListener('scroll', onNoteLineScroll, true);
     document.removeEventListener('play', onNarrationPlayOrPause, true);
     document.removeEventListener('pause', onNarrationPlayOrPause, true);
+    document.removeEventListener('ended', onNarrationPlayOrPause, true);
 
     cancelLeaveNoteLines();
+    cancelRestAllSlides();
     if (noteLineActions) noteLineActions.remove();
     hoverFragmentSlide = null;
     noteLineActions = null;
@@ -895,6 +927,7 @@ export function dispose() {
     dotNetRef = null;
     youtubePlayer = null;
     presentationReveal = null;
+    presentationRevealElement = null;
     filmPlayerBound = null;
     // Taken off, not just forgotten: the next Main View may listen to the same element (see unbindMediaListeners).
     unbindMediaListeners(consolidatedAudioListenersAttached);
@@ -1018,7 +1051,8 @@ function setupAudioListeners() {
                         f.classList.add('fragment');
                     });
                 }
-                
+                wakePptxArticleSlide(slideIndex);
+
                 // Expand the slideNavCard in the sidebar and show fragment controls
                 if (dotNetRef) {
                     dotNetRef.invokeMethodAsync('ExpandSlideNavCard', slideIndex);
@@ -1158,8 +1192,31 @@ function attachPresentationAudioListeners(audio) {
     });
 }
 
+/**
+ * Switches an Article (PPTX) slide's steps on, where a Reveal slide has its `fragment-off` taken away: it is
+ * drawn fully built until then (see pptxViewer.js). True when it was off; the step it was on is forgotten,
+ * so the step asked for next is applied.
+ */
+function wakePptxArticleSlide(slideIndex) {
+    const slideData = articleRevealInstances.find(s => s.index === slideIndex);
+
+    if (!slideData || !slideData.instance || !slideData.instance.isPptx || !slideData.instance.wake()) return false;
+
+    slideData.appliedFragment = undefined;
+    slideData.lastReportedFragment = undefined;
+    reportArticleFragment(slideIndex, slideData.instance.fragmentIndex, slideData.instance.clickCount);
+
+    return true;
+}
+
 function enablePresentationFragmentsForSlide() {
     if (!presentationReveal) {
+        return;
+    }
+
+    // The Slides (PPTX) deck is one player: its steps are switched on for the deck, as the narration starts.
+    if (presentationReveal.isPptx) {
+        if (presentationReveal.wake()) reportPresentationState();
         return;
     }
 
@@ -1171,13 +1228,141 @@ function enablePresentationFragmentsForSlide() {
     const fragmentsOff = currentSlide.querySelectorAll('.fragment-off');
     fragmentsOff.forEach(fragment => {
         fragment.classList.remove('fragment-off');
+        // Not left `visible`: a slide put back to fully built (restAllSlides) carries it, and Reveal would
+        // show every step until its index next moved.
+        fragment.classList.remove('visible');
         fragment.classList.add('fragment');
     });
+
+    if (fragmentsOff.length > 0) {
+        const state = presentationReveal.getState();
+        presentationReveal.slide(state.indexh, state.indexv, -1);
+    }
+}
+
+// -- Fully built while nothing plays and no line is hovered ---------------------------------------------
+//
+// The user's rule (2026-10-16): in all four slides views every element of a slide shows unless the narration
+// is playing or the pointer is on a line of the notes. Steps are switched on by the narration starting and by
+// a line hovered or clicked (as before); this switches them off again when the narration pauses or ends and
+// when the pointer leaves the lines — after a moment, so the gap between one slide's narration and the next
+// (pause, then ended, then the next slide's play) does not flash the slide fully built.
+
+const REST_DELAY_MS = 400;
+let restTimer = null;
+
+/** The narration's own players — not a film or a sound a slide embeds, which have nothing to do with steps. */
+const NARRATION_PLAYER = /^(consolidated-(audio|video)-player|audio-player-\d+|pres-audio-player)$/;
+
+function isAnyNarrationPlaying() {
+    return Array.from(document.querySelectorAll('audio, video'))
+        .some(media => NARRATION_PLAYER.test(media.id || '') && !media.paused && !media.ended);
+}
+
+function scheduleRestAllSlides() {
+    if (restTimer) clearTimeout(restTimer);
+    restTimer = setTimeout(() => {
+        restTimer = null;
+        restAllSlides();
+    }, REST_DELAY_MS);
+}
+
+function cancelRestAllSlides() {
+    if (!restTimer) return;
+    clearTimeout(restTimer);
+    restTimer = null;
+}
+
+/** Puts every slide of both views back to fully built — unless a narration plays, a line is hovered, or one is next. */
+function restAllSlides() {
+    if (isAnyNarrationPlaying() || isAutoAdvancing || hoverFragmentSlide !== null) return;
+
+    for (const slideData of articleRevealInstances) {
+        if (restArticleSlide(slideData) && dotNetRef) {
+            dotNetRef.invokeMethodAsync('HideArticleSlideFragmentControls', slideData.index);
+        }
+    }
+
+    if (restPresentation() && dotNetRef) {
+        dotNetRef.invokeMethodAsync('HidePresentationFragmentControls');
+    }
+}
+
+/** One article slide back to fully built; true when it had its steps on. */
+function restArticleSlide(slideData) {
+    if (!slideData || !slideData.instance) return false;
+
+    const instance = slideData.instance;
+    let rested = false;
+
+    if (instance.isPptx) {
+        if (instance.fragmentsEnabled) {
+            instance.setFragmentsEnabled(false);
+            rested = true;
+        }
+    } else {
+        const section = slideData.element.querySelector('section');
+        const fragments = section ? section.querySelectorAll('.fragment') : [];
+
+        if (fragments.length > 0) {
+            // Reveal back to before its first step, so the step asked for next is a move it makes.
+            try { instance.slide(0, 0, -1); } catch { /* an instance going away */ }
+
+            fragments.forEach(f => {
+                f.classList.remove('fragment', 'current-fragment');
+                f.classList.add('fragment-off', 'visible');
+            });
+            rested = true;
+        }
+    }
+
+    if (!rested) return false;
+
+    slideData.appliedFragment = undefined;
+    slideData.lastReportedFragment = undefined;
+
+    const section = slideData.element.querySelector('section');
+    reportArticleFragment(slideData.index, -1, countUniqueFragments(section));
+
+    return true;
+}
+
+/** The Slides view back to fully built; true when it had its steps on. */
+function restPresentation() {
+    if (!presentationReveal) return false;
+
+    if (presentationReveal.isPptx) {
+        if (!presentationReveal.fragmentsEnabled) return false;
+        presentationReveal.setFragmentsEnabled(false);
+        reportPresentationState();
+        return true;
+    }
+
+    const container = document.getElementById('presentationReveal');
+    const fragments = container ? container.querySelectorAll('.fragment') : [];
+
+    if (fragments.length === 0) return false;
+
+    const state = presentationReveal.getState();
+    try { presentationReveal.slide(state.indexh, state.indexv, -1); } catch { /* an instance going away */ }
+
+    fragments.forEach(f => {
+        f.classList.remove('fragment', 'current-fragment');
+        f.classList.add('fragment-off', 'visible');
+    });
+
+    reportPresentationState();
+    return true;
 }
 
 // Enable fragments for all slides in presentation view
 export function enablePresentationFragments() {
     if (!presentationReveal) return;
+    if (presentationReveal.isPptx) {
+        presentationReveal.setFragmentsEnabled(true);
+        reportPresentationState();
+        return;
+    }
     const container = document.getElementById('presentationReveal');
     if (!container) return;
     const fragmentsOff = container.querySelectorAll('.fragment-off');
@@ -1201,6 +1386,11 @@ export function enablePresentationFragments() {
 // Disable fragments for all slides in presentation view
 export function disablePresentationFragments() {
     if (!presentationReveal) return;
+    if (presentationReveal.isPptx) {
+        presentationReveal.setFragmentsEnabled(false);
+        reportPresentationState();
+        return;
+    }
     const container = document.getElementById('presentationReveal');
     if (!container) return;
     const fragments = container.querySelectorAll('.fragment');
@@ -1223,6 +1413,13 @@ export function disablePresentationFragments() {
 export function enableArticleSlideFragments(slideIndex) {
     const slideData = articleRevealInstances.find(s => s.index === slideIndex);
     if (!slideData) return;
+    // Back at the first step: the step the narration last applied is no longer on screen.
+    slideData.appliedFragment = undefined;
+    if (slideData.instance?.isPptx) {
+        slideData.instance.setFragmentsEnabled(true);
+        reportArticleFragment(slideIndex, slideData.instance.fragmentIndex, slideData.instance.clickCount);
+        return;
+    }
     const section = slideData.element.querySelector('section');
     if (!section) return;
     const fragmentsOff = section.querySelectorAll('.fragment-off');
@@ -1245,6 +1442,12 @@ export function enableArticleSlideFragments(slideIndex) {
 export function disableArticleSlideFragments(slideIndex) {
     const slideData = articleRevealInstances.find(s => s.index === slideIndex);
     if (!slideData) return;
+    slideData.appliedFragment = undefined;
+    if (slideData.instance?.isPptx) {
+        slideData.instance.setFragmentsEnabled(false);
+        reportArticleFragment(slideIndex, -1, slideData.instance.clickCount);
+        return;
+    }
     const section = slideData.element.querySelector('section');
     if (!section) return;
     const fragments = section.querySelectorAll('.fragment');
@@ -1721,6 +1924,96 @@ export function scrollToSlide(slideIndex) {
 }
 
 // Presentation View Functions
+
+/**
+ * Takes the slide show down when it is not the one about to be drawn — the other engine, or the same engine on
+ * an element that has since been replaced (switching between Slides and Slides (PPTX) draws the view afresh).
+ */
+function releasePresentation(container, wantPptx) {
+    if (!presentationReveal) return;
+
+    const sameEngine = !!presentationReveal.isPptx === !!wantPptx;
+    const ownElement = presentationReveal.isPptx ? presentationReveal.container : presentationRevealElement;
+
+    if (sameEngine && ownElement === container && document.contains(container)) return;
+
+    try {
+        presentationReveal.destroy?.();
+    } catch (error) {
+        logDebug('Error destroying the slide show', error);
+    }
+    presentationReveal = null;
+    presentationRevealElement = null;
+}
+
+/** The element the Reveal slide show was made on — what tells a replaced one from the live one. */
+let presentationRevealElement = null;
+
+/** Tells .NET which slide and step the slide show is on. */
+function reportPresentationState() {
+    if (!dotNetRef || !presentationReveal) return;
+    const state = presentationReveal.getState();
+    const total = countUniqueFragments(presentationReveal.getCurrentSlide());
+    dotNetRef.invokeMethodAsync('UpdatePresentationState', state.indexh, state.indexf ?? -1, total);
+}
+
+/**
+ * What both engines do once started: follow the window's size, move the narration with the slide, and report
+ * each slide and step to .NET.
+ */
+function bindPresentation(instance) {
+    syncPresentationAudioToSlide(1);
+
+    if (dotNetRef) {
+        const firstSlide = instance.getCurrentSlide();
+        dotNetRef.invokeMethodAsync('UpdatePresentationState', 0, -1, countUniqueFragments(firstSlide));
+    }
+
+    const wrapper = document.getElementById('presentationViewWrapper');
+    if (wrapper && !presentationResizeObserver) {
+        presentationResizeObserver = new ResizeObserver(() => {
+            resizePresentationLayout();
+        });
+        presentationResizeObserver.observe(wrapper);
+    }
+
+    resizePresentationLayout();
+    if (!presentationResizeBound) {
+        presentationResizeBound = true;
+        window.addEventListener('resize', () => {
+            resizePresentationLayout();
+        });
+    }
+
+    instance.on('slidechanged', (event) => {
+        logDebug(`Slide show slidechanged: index ${event.indexh}`);
+        syncPresentationAudioToSlide(event.indexh + 1);
+        if (dotNetRef) {
+            const totalFragments = countUniqueFragments(event.currentSlide);
+            dotNetRef.invokeMethodAsync('UpdatePresentationState', event.indexh, -1, totalFragments);
+        }
+
+        if (pendingPresentationSeek && pendingPresentationSeek.slideIndex === event.indexh + 1) {
+            const seekTime = pendingPresentationSeek.time;
+            pendingPresentationSeek = null;
+            setTimeout(() => {
+                seekPresentationAudio(seekTime);
+            }, 50);
+        }
+    });
+
+    const onFragment = () => {
+        if (!dotNetRef) return;
+        const state = instance.getState();
+        const totalFragments = countUniqueFragments(instance.getCurrentSlide());
+        logTrace(`Fragment: ${state.indexf}/${totalFragments}`);
+        dotNetRef.invokeMethodAsync('UpdatePresentationState', state.indexh, state.indexf, totalFragments);
+    };
+
+    instance.on('fragmentshown', onFragment);
+    instance.on('fragmenthidden', onFragment);
+}
+
 export async function initializePresentation(container, svgSources) {
     logInfo(`initializePresentation: ${svgSources.length} slides`);
     if (!container) {
@@ -1728,13 +2021,15 @@ export async function initializePresentation(container, svgSources) {
         return;
     }
 
+    releasePresentation(container, false);
+
     // Guard: if already initialized, just do a layout and return
     if (presentationReveal) {
         logDebug('Presentation already initialized, re-laying out');
         resizePresentationLayout();
         return;
     }
-    
+
     // Ensure Reveal.js is loaded
     if (!revealLoaded) {
         logDebug('Reveal.js not yet loaded, loading now...');
@@ -1744,7 +2039,7 @@ export async function initializePresentation(container, svgSources) {
             return;
         }
     }
-    
+
     // Initialize Reveal.js
     logDebug('Creating Reveal.js instance for presentation view');
     try {
@@ -1767,73 +2062,48 @@ export async function initializePresentation(container, svgSources) {
             maxScale: 2.0,
             plugins: [RevealZoom, RevealNotes, RevealSearch, RevealHighlight]
         });
-        
+        presentationRevealElement = container;
+
         await presentationReveal.initialize();
         logInfo('Reveal.js presentation view initialized successfully');
 
-        syncPresentationAudioToSlide(1);
-        
-        // Notify Blazor of initial fragment state for the first slide
-        if (dotNetRef) {
-            const firstSlide = presentationReveal.getCurrentSlide();
-            const initialFragments = countUniqueFragments(firstSlide);
-            dotNetRef.invokeMethodAsync('UpdatePresentationState', 0, -1, initialFragments);
-        }
-        
-        const wrapper = document.getElementById('presentationViewWrapper');
-        if (wrapper && !presentationResizeObserver) {
-            presentationResizeObserver = new ResizeObserver(() => {
-                resizePresentationLayout();
-            });
-            presentationResizeObserver.observe(wrapper);
-        }
-
-        resizePresentationLayout();
-        if (!presentationResizeBound) {
-            presentationResizeBound = true;
-            window.addEventListener('resize', () => {
-                resizePresentationLayout();
-            });
-        }
-        
-        presentationReveal.on('slidechanged', (event) => {
-            logDebug(`Reveal slidechanged: index ${event.indexh}`);
-            syncPresentationAudioToSlide(event.indexh + 1);
-            if (dotNetRef) {
-                const totalFragments = countUniqueFragments(event.currentSlide);
-                dotNetRef.invokeMethodAsync('UpdatePresentationState', event.indexh, -1, totalFragments);
-            }
-
-            if (pendingPresentationSeek && pendingPresentationSeek.slideIndex === event.indexh + 1) {
-                const seekTime = pendingPresentationSeek.time;
-                pendingPresentationSeek = null;
-                setTimeout(() => {
-                    seekPresentationAudio(seekTime);
-                }, 50);
-            }
-        });
-        
-        presentationReveal.on('fragmentshown', (event) => {
-            if (dotNetRef) {
-                const state = presentationReveal.getState();
-                const currentSlide = presentationReveal.getCurrentSlide();
-                const totalFragments = countUniqueFragments(currentSlide);
-                logTrace(`Fragment shown: ${state.indexf}/${totalFragments}`);
-                dotNetRef.invokeMethodAsync('UpdatePresentationState', state.indexh, state.indexf, totalFragments);
-            }
-        });
-        
-        presentationReveal.on('fragmenthidden', (event) => {
-            if (dotNetRef) {
-                const state = presentationReveal.getState();
-                const currentSlide = presentationReveal.getCurrentSlide();
-                const totalFragments = countUniqueFragments(currentSlide);
-                logTrace(`Fragment hidden: ${state.indexf}/${totalFragments}`);
-                dotNetRef.invokeMethodAsync('UpdatePresentationState', state.indexh, state.indexf, totalFragments);
-            }
-        });
+        bindPresentation(presentationReveal);
     } catch (error) {
         logError('Error initializing Reveal.js presentation', error);
+    }
+}
+
+/**
+ * The Slides (PPTX) view: Blazor Office's player over the deck, each slide its Generated (PPTX) drawing and model
+ * ({ index, width, height, svg, model }) — see pptxViewer.js. Driven through the same calls as Reveal's.
+ */
+export async function initializePptxPresentation(container, slides) {
+    logInfo(`initializePptxPresentation: ${slides?.length ?? 0} slides`);
+    if (!container) {
+        logError('Presentation container is null');
+        return;
+    }
+
+    releasePresentation(container, true);
+
+    if (presentationReveal) {
+        resizePresentationLayout();
+        return;
+    }
+
+    try {
+        const engine = Pptx.createDeckEngine(container, slides || []);
+        if (!(await engine.initialize())) {
+            logError('Cannot initialize Slides (PPTX) - Blazor Office\'s player could not be started');
+            return;
+        }
+
+        presentationReveal = engine;
+        logInfo('Slides (PPTX) view initialized');
+
+        bindPresentation(engine);
+    } catch (error) {
+        logError('Error initializing the Slides (PPTX) view', error);
     }
 }
 
@@ -2293,7 +2563,15 @@ export async function initializeArticleView(slides) {
         }
     }
     
-    // Clear existing instances
+    // Taken down, not just forgotten: switching between the two articles draws the cards afresh, and an
+    // engine left on a card that has gone keeps its player (and its media) alive.
+    for (const old of articleRevealInstances) {
+        try {
+            old.instance?.destroy?.();
+        } catch (e) {
+            logDebug(`Error destroying article instance ${old.index}`, e);
+        }
+    }
     articleRevealInstances.length = 0;
 
     if (!articleResizeBound) {
@@ -2311,7 +2589,14 @@ export async function initializeArticleView(slides) {
             logDebug(`Article slide container not yet in DOM: ${containerId}`);
             continue;
         }
-        
+
+        // Article (PPTX): the card is drawn by Blazor Office's player rather than by Reveal.
+        if (slide.pptx && element.dataset.engine === 'pptx') {
+            const success = await initializePptxArticleSlide(element, slide);
+            results.push({ index: slide.index, success });
+            continue;
+        }
+
         logTrace(`Initializing article slide ${slide.index}`);
         
         // The element already has the reveal class, slides structure, and inline styles from Razor
@@ -2460,6 +2745,32 @@ export async function initializeArticleView(slides) {
     return results;
 }
 
+/**
+ * One Article (PPTX) card: Blazor Office's player over the slide's Generated (PPTX) drawing, registered the way a
+ * Reveal card is so the narration, the step counter and its buttons find it by the slide's index.
+ */
+async function initializePptxArticleSlide(element, slide) {
+    try {
+        const engine = Pptx.createArticleEngine(element, slide);
+        if (!(await engine.initialize())) {
+            logWarning(`Article (PPTX) slide ${slide.index}: the player could not be started`);
+            return false;
+        }
+
+        articleRevealInstances.push({ index: slide.index, instance: engine, element, pptx: true });
+
+        const report = () => reportArticleFragment(slide.index, engine.fragmentIndex, engine.clickCount);
+        engine.on('fragmentshown', report);
+        engine.on('fragmenthidden', report);
+        if (dotNetRef && engine.clickCount > 0) report();
+
+        return true;
+    } catch (error) {
+        logError(`Error initializing Article (PPTX) slide ${slide.index}`, error);
+        return false;
+    }
+}
+
 // Navigate fragment in a specific article slide
 export function navigateArticleSlideFragment(slideIndex, direction) {
     logDebug(`navigateArticleSlideFragment: slide ${slideIndex}, direction ${direction > 0 ? 'next' : 'previous'}`);
@@ -2493,7 +2804,9 @@ export function getArticleSlideFragmentState(slideIndex) {
     const slideData = articleRevealInstances.find(s => s.index === slideIndex);
     if (slideData && slideData.instance) {
         const state = slideData.instance.getState();
-        const totalFragments = slideData.element.querySelectorAll('.fragment').length;
+        const totalFragments = slideData.instance.isPptx
+            ? slideData.instance.clickCount
+            : slideData.element.querySelectorAll('.fragment').length;
         return { fragmentIndex: state.indexf, totalFragments };
     }
     return null;
@@ -2503,6 +2816,11 @@ export function getArticleSlideFragmentState(slideIndex) {
 export function layoutAllArticleSlides() {
     logDebug(`layoutAllArticleSlides: ${articleRevealInstances.length} instances`);
     for (const slideData of articleRevealInstances) {
+        // Blazor Office's player fills the box the page sizes; there is nothing of Reveal's to undo.
+        if (slideData.instance?.isPptx) {
+            slideData.instance.layout();
+            continue;
+        }
         try {
             // Reset inline width/height that Reveal.js may have set
             slideData.element.style.height = 'auto';
@@ -3548,6 +3866,7 @@ function handleConsolidatedMediaPlay(slideIndex, mediaLabel) {
             f.classList.add('fragment');
         });
     }
+    wakePptxArticleSlide(slideIndex);
 
     // Enable fragments in presentation view
     if (presentationReveal) {
