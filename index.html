@@ -6,6 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TheMultimodalBibleOrg</title>
     <base href="/" />
+    <!-- Connections opened while the viewer itself is still downloading (2026-10-18): every page's slides, notes,
+         audio and pictures come from GitHub's raw host, and the fonts and icons from the two CDNs. Twice for the
+         raw host, because its documents are fetched with CORS and its pictures without, and a browser keeps the
+         two on separate connections. -->
+    <link rel="preconnect" href="https://raw.githubusercontent.com" crossorigin />
+    <link rel="preconnect" href="https://raw.githubusercontent.com" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Carlito&display=swap" />
     <link rel="stylesheet" href="_content/JBC.DoMoreWithSlides.AL.BlazorLib/revealjs/reset.css" />
     <link rel="stylesheet" href="_content/JBC.DoMoreWithSlides.AL.BlazorLib/revealjs/reveal.css" />

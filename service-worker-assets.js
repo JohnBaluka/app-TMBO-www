@@ -1,5 +1,5 @@
 self.assetsManifest = {
-  "version": "y0+p4UL8",
+  "version": "pVeggOO4",
   "assets": [
     {
       "hash": "sha256-sV7FOmO5xSEKagjppW5DHj5oNqm0z1XtpbYbl5WuLkA=",
@@ -78,7 +78,7 @@ self.assetsManifest = {
       "url": "_content/JBC.DoMoreWithSlides.AL.BlazorLib/css/site.css"
     },
     {
-      "hash": "sha256-Gb+tVja6IV2lEbKpqYbtZzsOdLkdBt3a5AypQkqDS3Y=",
+      "hash": "sha256-t3EKsyNkmzLxHeAtKwoojNKUZoZ9kGdyZp9DS9IWHkI=",
       "url": "_content/JBC.DoMoreWithSlides.AL.BlazorLib/js/articleViewer.js"
     },
     {
@@ -114,7 +114,7 @@ self.assetsManifest = {
       "url": "_content/JBC.DoMoreWithSlides.AL.BlazorLib/js/newWindow.js"
     },
     {
-      "hash": "sha256-HDW444RH0EQFMUZkElsX/ldboRb8m8rhr37xrJQuyxs=",
+      "hash": "sha256-fqR3eKPjOtjGCzpabvVmpDehFuDc2js0Av6X3WJrq2Y=",
       "url": "_content/JBC.DoMoreWithSlides.AL.BlazorLib/js/pptxViewer.js"
     },
     {
@@ -542,36 +542,36 @@ self.assetsManifest = {
       "url": "_framework/JBC.DoMoreWithOffice.DL.1ordjw8byj.wasm"
     },
     {
-      "hash": "sha256-tUXl1UAGkDkoEx+lJjOJYFBl9mKULIMO1KOX4C0hKzI=",
-      "url": "_framework/JBC.DoMoreWithSlides.AL.BlazorLib.1hlozwse92.wasm"
+      "hash": "sha256-cKjXPwFDW8cotMOYgsRtbwSuIqLguSo3bIMsjbACLlw=",
+      "url": "_framework/JBC.DoMoreWithSlides.AL.BlazorLib.wov4rpnj5m.wasm"
     },
     {
-      "hash": "sha256-0dBT+vjXycFWFpPBhDPa/JjEb23e77g9CIY1CCVkTHw=",
-      "url": "_framework/JBC.DoMoreWithSlides.AL.dhqbi96gws.wasm"
+      "hash": "sha256-tk5ZUR/7c+xbpPrCw/VSm2MTVJGrwX3bPOGztvsKq2M=",
+      "url": "_framework/JBC.DoMoreWithSlides.AL.eiy0sp8ywl.wasm"
     },
     {
-      "hash": "sha256-WOf4GIOWc66Q0nLyXnr5OyZQR4ySz1z0/uI2EPNm2cA=",
-      "url": "_framework/JBC.DoMoreWithSlides.BL.szmd73dxgg.wasm"
+      "hash": "sha256-Xy+WrnkSc5acMNDfmLfUsL/qEYz5aPblAti8eDboaDk=",
+      "url": "_framework/JBC.DoMoreWithSlides.BL.1khfm1pvqt.wasm"
     },
     {
-      "hash": "sha256-r466+GUX7xvD6VLUtr3Z2w/Si5E0wyOvDXOG3d4zpZ4=",
-      "url": "_framework/JBC.DoMoreWithSlides.CL.lb3u1puud8.wasm"
+      "hash": "sha256-Z7L019kItfnHLehfh9Cn9bjbdHasR8kOyt9bIPefHoo=",
+      "url": "_framework/JBC.DoMoreWithSlides.CL.xm6c1k30fu.wasm"
     },
     {
-      "hash": "sha256-HW4eHG2CJyRDJGcngcPd0jTjBAABP37H3ZtOu6c+VD4=",
-      "url": "_framework/JBC.DoMoreWithSlides.DL.5e241e7apn.wasm"
+      "hash": "sha256-a0BODwAvYrDRGdjMyJ8Sh6df49cabD+sBkJC8xcIadE=",
+      "url": "_framework/JBC.DoMoreWithSlides.DL.MsJSInterop.tu83c9ayt1.wasm"
     },
     {
-      "hash": "sha256-+hdDuOMClxZdloAXNJowySy7y4kfMHq/8BlV0aoFx2M=",
-      "url": "_framework/JBC.DoMoreWithSlides.DL.MsJSInterop.qwey0qj3dg.wasm"
+      "hash": "sha256-XbME4ua5xlLW3A1iih7uqEvZAVaqp4VnngC0lKcKpNY=",
+      "url": "_framework/JBC.DoMoreWithSlides.DL.MsSystemNet.rig48y11sy.wasm"
     },
     {
-      "hash": "sha256-y2jxxpEQ9gQHACRVODuXQlyDdjbIc6pu7HUm0wb3GRQ=",
-      "url": "_framework/JBC.DoMoreWithSlides.DL.MsSystemNet.fn0ydxec7i.wasm"
+      "hash": "sha256-hEWbiMen1X92miMaFBZ3BTsckrazO8B44eK+Ya2eTIQ=",
+      "url": "_framework/JBC.DoMoreWithSlides.DL.kcgf1tp21f.wasm"
     },
     {
-      "hash": "sha256-meKjdLj9hRq1K5gGunGjXogK0xypgX31QxR4FR1JFLc=",
-      "url": "_framework/JBC.GitSlides.AL.BlazorWebApp.ClientOnly.3pqpuv1wkh.wasm"
+      "hash": "sha256-SKUwxuoxDzEWDgdqhGAwAyesJNSfmxgPmmMRy/eUIY0=",
+      "url": "_framework/JBC.GitSlides.AL.BlazorWebApp.ClientOnly.cvaxgg6pmg.wasm"
     },
     {
       "hash": "sha256-jq1Ly8XuCR1nHRzRVviVADY88welOZMkmW29amQv/t4=",
@@ -834,7 +834,7 @@ self.assetsManifest = {
       "url": "_framework/de/Radzen.Blazor.resources.u2yixkz2m3.wasm"
     },
     {
-      "hash": "sha256-M9Tj4o1Tbp5RdNOo2FYfZ7z5GHw+i6V5yNIOTfCkhzQ=",
+      "hash": "sha256-jcyWCWLPEWzJrXuuykPcU0aFn1I1tjtAER0PqZJ+WFs=",
       "url": "_framework/dotnet.js"
     },
     {
@@ -902,7 +902,7 @@ self.assetsManifest = {
       "url": "icon-512.png"
     },
     {
-      "hash": "sha256-TBEti7fXGrWs7kXr3x9xzHOcdVBt8SPv8NzFSgB0Mns=",
+      "hash": "sha256-BTM2prA9cLS5j69nbcdwalAt/6Ho/tsuxrF8q0ixK6I=",
       "url": "index.html"
     },
     {

@@ -181,14 +181,25 @@ class PptxEngine {
 
 // ---- One slide, in an article card --------------------------------------------------------------------------
 
+// Each card's engine, by its card, from the moment it is made — before its first drawing is on the page, which
+// is when articleViewer.js may already be putting that drawing's pictures back.
+const articleEngines = new WeakMap();
+
+/** The engine drawing an Article (PPTX) card, or null. */
+export function articleEngineOf(element) {
+    return articleEngines.get(element) || null;
+}
+
 class PptxArticleEngine extends PptxEngine {
     constructor(element, slide) {
         super();
         this.element = element;
         // Not `slide`: that is the method Reveal's callers step it by.
         this.data = slide;
+        this.row = null;
         this.section = element.querySelector('section') || element;
         this.frame = element.querySelector('.pptx-stage') || this.section;
+        articleEngines.set(element, this);
     }
 
     async initialize() {
@@ -197,6 +208,7 @@ class PptxArticleEngine extends PptxEngine {
 
         // The drawing declares its own faces in a <style> of its own, resolved against the page when it was loaded.
         const row = rowOf(this.data);
+        this.row = row;
         this.screen = player.embed(this.frame, { ...sizeOf(row, this.data), showNarration: false });
 
         // No transition in an article: each card is its own slide, arriving with the page — fully built.
@@ -211,6 +223,21 @@ class PptxArticleEngine extends PptxEngine {
     getCurrentSlide() { return this.section; }
 
     slide(h, v, f) { this.showFragment(typeof f === 'number' ? f : -1, true); }
+
+    /**
+     * The card's drawing comes with its pictures held back (SlidePictureDeferral_Helper) and articleViewer.js puts
+     * them back as the card nears the screen. This puts them back in the row too: the player draws the slide again
+     * from it at every step, and the same row object is what its stage holds.
+     */
+    undeferPictures() {
+        if (!this.row?.svg) return;
+        this.row.svg = this.row.svg.replace(/ data-dmws-deferred="\d+"/, '').replace(/data-dmws-href=/g, 'href=');
+    }
+
+    destroy() {
+        articleEngines.delete(this.element);
+        super.destroy();
+    }
 }
 
 /** An article slide's engine; call `initialize()` before anything else. */

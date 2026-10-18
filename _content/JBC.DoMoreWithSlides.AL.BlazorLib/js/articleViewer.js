@@ -265,6 +265,124 @@ export function resizePresentationLayoutInterop() {
     resizePresentationLayout();
 }
 
+// ---- A slide's pictures, fetched as it nears the screen -------------------------------------------------------
+//
+// The user's report (2026-10-18): a page's pictures did not appear until the reader had gone from page to page.
+// Every slide's drawing went into the page at once, and every picture with it — 85 MB for the 19 slides of
+// Matthew 9 in Article (PPTX) — so the slide on the screen waited behind the one at the bottom. The SVGs now arrive with their pictures held
+// back (SlidePictureDeferral_Helper: each <image>'s address in data-dmws-href, the count on the root's
+// data-dmws-deferred), and this puts the addresses back:
+//
+//   - the Article view's, as each card comes within a screen of being seen (an IntersectionObserver on the
+//     article's own scroller, which is what clips it — the window's would never see a card coming);
+//   - the Slides view's, for the slide shown and the ones either side, as the deck moves (revealPresentationPictures)
+//     — Reveal moves the others off its stage, where nothing would ever see them.
+//
+// A card's skeleton (.dmws-pictures-skeleton, a sibling of its SVG) is taken away once every picture has loaded or
+// failed. Found by a MutationObserver rather than called from .NET, so a slide drawn again — a size changed, the
+// drawings arriving — is picked up however it came.
+
+const DEFERRED_PICTURE_ATTR = 'data-dmws-href';
+const DEFERRED_SVG_SELECTOR = 'svg[data-dmws-deferred]';
+const PICTURE_LOOKAHEAD = '100% 0px';
+
+// Per scroller, weakly, so a page's observer goes with its article; the window's is kept aside.
+const pictureObservers = new WeakMap();
+let windowPictureObserver = null;
+const revealedPictureSvgs = new WeakSet();
+let pictureWatcher = null;
+
+/** The nearest ancestor that scrolls, which is what an IntersectionObserver must be rooted on; null for the window. */
+function scrollerOf(element) {
+    for (let node = element.parentElement; node && node !== document.body; node = node.parentElement) {
+        const overflow = window.getComputedStyle(node).overflowY;
+        if (overflow === 'auto' || overflow === 'scroll') return node;
+    }
+    return null;
+}
+
+/** Puts an SVG's pictures back, once, and takes its skeleton away when they have all arrived. */
+function revealSvgPictures(svg) {
+    if (!svg || revealedPictureSvgs.has(svg)) return;
+    revealedPictureSvgs.add(svg);
+
+    const images = [...svg.querySelectorAll(`image[${DEFERRED_PICTURE_ATTR}]`)];
+    // The card's section holds the skeleton: beside a Reveal SVG, or beside the player's stage the SVG is in.
+    const skeleton = svg.closest('section')?.querySelector(':scope > .dmws-pictures-skeleton');
+
+    // An Article (PPTX) card's player draws the slide again at every step: its own copy has to have the
+    // pictures back too, or each step would draw them held back again.
+    const pptxCard = svg.closest('.pptx-article');
+    if (pptxCard) Pptx.articleEngineOf(pptxCard)?.undeferPictures();
+    let pending = images.length;
+    const settled = () => {
+        if (--pending > 0 || !skeleton) return;
+        skeleton.dataset.dmwsLoaded = '';
+    };
+
+    if (pending === 0) {
+        pending = 1;
+        settled();
+        return;
+    }
+
+    for (const image of images) {
+        image.addEventListener('load', settled, { once: true });
+        image.addEventListener('error', settled, { once: true });
+        image.setAttribute('href', image.getAttribute(DEFERRED_PICTURE_ATTR));
+        image.removeAttribute(DEFERRED_PICTURE_ATTR);
+    }
+    logTrace(`revealSvgPictures: ${images.length} pictures for ${svg.closest('section')?.id ?? 'a slide'}`);
+}
+
+/** The observer for everything that scrolls inside `root`, made once per scroller. */
+function pictureObserverFor(root) {
+    const known = root ? pictureObservers.get(root) : windowPictureObserver;
+    if (known) return known;
+
+    const observer = new IntersectionObserver((entries, self) => {
+        for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            self.unobserve(entry.target);
+            revealSvgPictures(entry.target);
+        }
+    }, { root, rootMargin: PICTURE_LOOKAHEAD });
+
+    if (root) pictureObservers.set(root, observer);
+    else windowPictureObserver = observer;
+    return observer;
+}
+
+/** Watches the article's held-back SVGs under `node`; the Slides view's are put back as the deck moves. */
+function watchDeferredPicturesIn(node) {
+    if (!(node instanceof Element)) return;
+    const svgs = node.matches(DEFERRED_SVG_SELECTOR) ? [node] : [...node.querySelectorAll(DEFERRED_SVG_SELECTOR)];
+    for (const svg of svgs) {
+        if (revealedPictureSvgs.has(svg) || svg.closest('#presentationReveal')) continue;
+        pictureObserverFor(scrollerOf(svg)).observe(svg);
+    }
+}
+
+/** Starts watching the document for held-back slides — once, however often the viewer is initialised. */
+function watchSlidePictures() {
+    if (pictureWatcher || typeof MutationObserver === 'undefined') return;
+    pictureWatcher = new MutationObserver(mutations => {
+        for (const mutation of mutations) {
+            for (const node of mutation.addedNodes) watchDeferredPicturesIn(node);
+        }
+    });
+    pictureWatcher.observe(document.body, { childList: true, subtree: true });
+    watchDeferredPicturesIn(document.body);
+}
+
+/** The Slides view's pictures for the slide at `indexh` (0-based) and the slides either side of it. */
+function revealPresentationPictures(indexh) {
+    for (let index = indexh - 1; index <= indexh + 2; index++) {
+        const section = document.getElementById(`presentationSlide-${index + 1}`);
+        revealSvgPictures(section?.querySelector(DEFERRED_SVG_SELECTOR));
+    }
+}
+
 /**
  * Notifies JS that the user clicked a note, suppressing timeupdate-driven
  * note updates until the media catches up to the clicked note's position.
@@ -329,10 +447,13 @@ async function loadRevealJs() {
     logInfo('Loading Reveal.js and plugins...');
     
     revealLoadPromise = (async () => {
+        // Where AL.BlazorLib serves it, first (2026-10-18): the GitSlides viewer and every head built on that
+        // library have it there, and trying the other two first cost them ten 404s — five modules each — on
+        // every first load. The Radzen Studio head, whose copy of this file serves its own, finds it next.
         const revealBasePaths = [
+            '_content/JBC.DoMoreWithSlides.AL.BlazorLib/revealjs',
             'libs/revealjs/5.0.5',
-            'revealjs',
-            '_content/JBC.DoMoreWithSlides.AL.BlazorLib/revealjs'
+            'revealjs'
         ];
 
         for (const basePath of revealBasePaths) {
@@ -388,7 +509,10 @@ export async function initialize(dotNet, level = 3) {
     logLevel = level;
     logInfo(`Initializing ArticleViewer JS module (log level: ${level})`);
     dotNetRef = dotNet;
-    
+
+    // Before Reveal.js is waited for: the slides may already be on the page, their pictures held back.
+    watchSlidePictures();
+
     // Load Reveal.js
     const revealSuccess = await loadRevealJs();
     if (revealSuccess) {
@@ -1963,6 +2087,7 @@ function reportPresentationState() {
  */
 function bindPresentation(instance) {
     syncPresentationAudioToSlide(1);
+    revealPresentationPictures(instance.getState?.().indexh ?? 0);
 
     if (dotNetRef) {
         const firstSlide = instance.getCurrentSlide();
@@ -1987,6 +2112,7 @@ function bindPresentation(instance) {
 
     instance.on('slidechanged', (event) => {
         logDebug(`Slide show slidechanged: index ${event.indexh}`);
+        revealPresentationPictures(event.indexh);
         syncPresentationAudioToSlide(event.indexh + 1);
         if (dotNetRef) {
             const totalFragments = countUniqueFragments(event.currentSlide);
@@ -2552,9 +2678,10 @@ export async function initializeArticleSlide(slideIndex, containerId, svgContent
 // Initialize all article slides from an array of slide data
 export async function initializeArticleView(slides) {
     logInfo(`initializeArticleView: ${slides.length} slides`);
-    
-    // Ensure Reveal.js is loaded
-    if (!revealLoaded) {
+
+    // Only when a card is Reveal's (2026-10-18): Article (PPTX) cards are drawn by Blazor Office's player, and
+    // waiting for Reveal's 1.1 MB of modules left every one of them empty on a slow connection.
+    if (!revealLoaded && slides.some(slide => !slide.pptx)) {
         logDebug('Reveal.js not yet loaded, loading now...');
         const loaded = await loadRevealJs();
         if (!loaded) {
@@ -3149,7 +3276,8 @@ export function setupSidebarThumbnailHover(siteBaseUrl) {
             // navigation away. A screen with no hover has no preview.
             if (window.matchMedia && window.matchMedia('(hover: none)').matches) return;
 
-            const src = imgEl.src;
+            // The slide's full PNG, not the small thumbnail drawn in the list (data-full-src, 2026-10-18).
+            const src = imgEl.dataset.fullSrc || imgEl.src;
             popupImage.src = src;
             
             // Calculate available space
